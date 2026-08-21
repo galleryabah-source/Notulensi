@@ -19,19 +19,25 @@ const runtimeMap = new Map((runtimeEvidence?.checks || []).map(check => [check.i
 const authBoundaryEvidence = loadJson(process.env.AUTH_BOUNDARY_EVIDENCE_INPUT || `${root}/phase17-execution/auth-boundary-evidence.json`);
 const applicationAuthEvidence = loadJson(process.env.APPLICATION_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-auth-evidence.json`);
 const applicationAuthIntegration = loadJson(process.env.APPLICATION_AUTH_INTEGRATION_INPUT || `${root}/phase17-execution/application-auth-integration.json`);
+const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
   let observed = runtimeMap.get(id);
   if (id === '17-E.runtime.auth') {
+    const realAppPass = applicationRealAuthEvidence?.applicationRuntimeIntegrated === true && applicationRealAuthEvidence?.integrationFixture === false && Array.isArray(applicationRealAuthEvidence.checks) && applicationRealAuthEvidence.checks.length > 0 && applicationRealAuthEvidence.checks.every(check => check.status === 'PASS');
     const fixturePass = applicationAuthEvidence?.integrationFixture === true && Array.isArray(applicationAuthEvidence.checks) && applicationAuthEvidence.checks.length > 0 && applicationAuthEvidence.checks.every(check => check.status === 'PASS');
     const integrationPass = applicationAuthIntegration?.status === 'PASS' && applicationAuthIntegration?.applicationRuntimeIntegrated === true && applicationAuthIntegration?.fixturePromotionAllowed === true;
-    if (fixturePass && integrationPass) {
+    if (realAppPass) {
+      observed = { status:'PASS', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real Meeting Intelligence runtime adapter served the application entrypoint and executable authentication/RBAC checks passed on the same runtime origin.' };
+    } else if (applicationRealAuthEvidence?.checks?.some(check => check.status === 'FAIL')) {
+      observed = { status:'FAIL', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real application runtime authentication evidence contains a failed executable check.' };
+    } else if (fixturePass && integrationPass) {
       observed = { status:'PASS', evidence:['phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json'], details:'Executable authentication/RBAC checks passed and the real application runtime explicitly reported authenticated integration.' };
     } else if (applicationAuthIntegration?.status === 'FAIL') {
       observed = applicationAuthIntegration;
     } else {
-      observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json'], details:applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
+      observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json','phase17-execution/application-real-auth-evidence.json'], details:applicationRealAuthEvidence?.details || applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
     }
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
