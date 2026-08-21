@@ -1,13 +1,13 @@
 {
   "name": "meeting-intelligence-secure-share-backend",
-  "version": "4.8.0",
+  "version": "4.9.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/security.js && node --check test/security.test.js",
-    "test": "node --test test/security.test.js"
+    "check": "node --check src/server.js && node --check src/auth.js && node --check src/security.js && node --check test/security.test.js && node --check test/auth.test.js",
+    "test": "node --test test/security.test.js test/auth.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
