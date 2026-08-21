@@ -22,6 +22,7 @@ const applicationAuthIntegration = loadJson(process.env.APPLICATION_AUTH_INTEGRA
 const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
 const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
 const backupRestoreEvidence = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
+const disasterRecoveryEvidence = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
@@ -49,6 +50,13 @@ for (const [id,phase,name,details] of runtimeDomains) {
     if (realBackupPass) observed = { status:'PASS', evidence:['phase17-execution/backup-restore-evidence.json'], details:'A real PostgreSQL custom-format backup was created, restored into an isolated database, and controlled data/schema integrity checks passed.' };
     else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill contains a failed executable check.' };
     else observed = { status:'NOT_RUN', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill has not produced complete real-database evidence.' };
+  }
+  if (id === '17-E.runtime.dr') {
+    const realDrPass = disasterRecoveryEvidence?.applicationRuntimeIntegrated === true && disasterRecoveryEvidence?.integrationFixture === false && disasterRecoveryEvidence?.status === 'PASS' && disasterRecoveryEvidence?.drillType === 'controlled-database-loss-and-recovery' && Array.isArray(disasterRecoveryEvidence.checks) && disasterRecoveryEvidence.checks.length > 0 && disasterRecoveryEvidence.checks.every(check => check.status === 'PASS');
+    const failed = disasterRecoveryEvidence?.checks?.some(check => check.status === 'FAIL') || disasterRecoveryEvidence?.status === 'FAIL';
+    if (realDrPass) observed = { status:'PASS', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Controlled database-loss simulation and recovery from a real PostgreSQL recovery point completed with critical-state integrity checks passing.' };
+    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill contains a failed executable recovery check.' };
+    else observed = { status:'NOT_RUN', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill has not produced complete real-database recovery evidence.' };
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
 }
