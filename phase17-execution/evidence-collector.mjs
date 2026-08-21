@@ -49,7 +49,8 @@ function runtimeCheckFromFile(path, id, phase, name, fallbackDetails) {
   try {
     const value = JSON.parse(readFileSync(absolute, 'utf8'));
     if (value.status === 'PASS') {
-      return { id, phase, name, status: 'PASS', evidence: [path], details: `Runtime harness passed: ${value.target || path}.` };
+      const scope = value.scope ? ` Scope: ${value.scope}.` : '';
+      return { id, phase, name, status: 'PASS', evidence: [path], details: `Runtime harness passed.${scope}` };
     }
     return { id, phase, name, status: 'FAIL', evidence: [path], details: `Runtime harness reported ${value.status || 'unknown'} status.` };
   } catch (error) {
@@ -70,6 +71,8 @@ checks.push({
 for (const [id, phase, name, details] of runtimeDomains) {
   if (id === '17-E.runtime.health') {
     checks.push(runtimeCheckFromFile('phase17-execution/runtime-health.json', id, phase, name, details));
+  } else if (id === '17-E.runtime.database') {
+    checks.push(runtimeCheckFromFile('phase17-execution/database-runtime.json', id, phase, name, details));
   } else {
     checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
   }
