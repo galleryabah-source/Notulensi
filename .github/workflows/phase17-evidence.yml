@@ -39,6 +39,8 @@ jobs:
       NODE_ENV: test
       EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/evidence-report.json
       RUNTIME_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/runtime-evidence.json
+      AUTH_BOUNDARY_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/auth-boundary-evidence.json
+      AUTH_BOUNDARY_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/auth-boundary-evidence.json
       RUNTIME_BASE_URL: http://127.0.0.1:4173
       RUNTIME_APP_PATH: /meeting-intelligence-app-phase4.3-integrated-safe.html
       PGHOST: 127.0.0.1
@@ -77,6 +79,11 @@ jobs:
             echo "Checking $file"
             node --check "$file"
           done
+
+      - name: Run authentication boundary discovery
+        shell: bash
+        run: |
+          node phase17-execution/auth-boundary-audit.mjs
 
       - name: Start application runtime harness server
         shell: bash
@@ -117,8 +124,6 @@ jobs:
           status=$?
           set -e
           cat phase17-execution/readiness-result.json
-          # NO-GO remains an expected evidence outcome while higher runtime domains are absent.
-          # The CI job remains successful so the evidence artifact can be inspected.
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
             exit "$status"
           fi
@@ -141,6 +146,7 @@ jobs:
         with:
           name: phase17-evidence-${{ github.sha }}
           path: |
+            phase17-execution/auth-boundary-evidence.json
             phase17-execution/runtime-evidence.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
