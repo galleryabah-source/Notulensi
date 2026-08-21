@@ -17,6 +17,8 @@
     "security:pilot-test": "node server/security/controlled-endpoint-pilot.self-test.mjs",
     "security:registry-test": "node server/security/protected-route-registry.self-test.mjs",
     "security:audit-test": "node server/security/security-audit-event.self-test.mjs",
+    "security:readiness-test": "node server/security/endpoint-integration-readiness.self-test.mjs",
+    "security:real-pilot-test": "node server/security/real-endpoint-pilot-verification.self-test.mjs",
     "security:pre-activation-test": "node server/security/pre-activation-regression-gate.mjs"
   },
   "dependencies": {

@@ -6,6 +6,8 @@ const tests = [
   'server/security/controlled-endpoint-pilot.self-test.mjs',
   'server/security/protected-route-registry.self-test.mjs',
   'server/security/security-audit-event.self-test.mjs',
+  'server/security/endpoint-integration-readiness.self-test.mjs',
+  'server/security/real-endpoint-pilot-verification.self-test.mjs',
 ];
 
 for (const test of tests) {
@@ -20,4 +22,4 @@ for (const test of tests) {
   }
 }
 
-console.log('Phase 4.35 pre-activation regression gate: PASS');
+console.log('Phase 4.37 pre-activation regression gate: PASS');
