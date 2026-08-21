@@ -26,7 +26,7 @@
 
   const get = k => { try { return localStorage.getItem(k); } catch(e){ return null; } };
   const set = (k,v) => { try { localStorage.setItem(k,v); return true; } catch(e){ return false; } };
-  const esc = v => typeof escapeHTML === 'function' ? escapeHTML(v) : String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const esc = v => typeof escapeHTML === 'function' ? escapeHTML(v) : String(v ?? '').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[m]));
   const toast = (m,t='info') => typeof showToast === 'function' ? showToast(m,t) : console.log(m);
   const hash = value => {
     let h=2166136261, s=String(value ?? '');
@@ -58,6 +58,18 @@
     return `PACK-${String(m?.id||'current-meeting')}-${t.id}`;
   }
 
+  function captureRevisionLink(){
+    try{
+      if(typeof buildRevisionSnapshotV42 !== 'function') return null;
+      const revision=buildRevisionSnapshotV42();
+      if(!revision) return null;
+      return {revisionId:revision.revisionId,revision:Number(revision.revision)||0,documentId:revision.documentId,contentHash:revision.contentHash};
+    }catch(e){
+      console.warn('Phase 4.3 revision linkage failed:',e);
+      return null;
+    }
+  }
+
   function makePack(){
     const m=meeting(), t=templateMeta(), id=packId();
     const existing=store[id];
@@ -86,9 +98,7 @@
     store[id]=pack; currentPackId=id; currentPack=pack; save(); return pack;
   }
 
-  function documentTypes(){
-    return TYPES.slice();
-  }
+  function documentTypes(){ return TYPES.slice(); }
 
   function generateOne(type){
     if(typeof generateDocumentV4==='function') return generateDocumentV4(type);
@@ -107,6 +117,7 @@
         const d=window.currentGeneratedDocument || before;
         if(!d?.content) throw new Error('Output dokumen kosong.');
         const meta=TYPES.find(x=>x.type===type)||{label:type};
+        const revision=captureRevisionLink();
         const item={
           documentId:`DOC-${pack.source.meetingId}-${type}-${pack.template.id}`,
           packId:pack.packId,
@@ -117,14 +128,17 @@
           contentHash:hash(d.content),
           template:{...pack.template},
           source:{...pack.source},
+          revision:revision || undefined,
           generatedAt:new Date().toISOString()
         };
-        const idx=pack.documents.findIndex(x=>x.documentId===item.documentId && x.contentHash===item.contentHash);
-        if(idx<0) pack.documents.push(item);
-        results.push({type,ok:true,documentId:item.documentId,contentHash:item.contentHash});
+        const existingIndex=pack.documents.findIndex(x=>x.documentId===item.documentId && x.contentHash===item.contentHash);
+        if(existingIndex<0) pack.documents.push(item);
+        else if(revision) pack.documents[existingIndex].revision=revision;
+        results.push({type,ok:true,documentId:item.documentId,contentHash:item.contentHash,revisionId:revision?.revisionId||null});
       }catch(e){ results.push({type,ok:false,error:String(e?.message||e)}); }
     }
-    pack.updatedAt=new Date().toISOString(); store[pack.packId]=pack; save(); currentPack=pack; render();
+    pack.updatedAt=new Date().toISOString();
+    store[pack.packId]=pack; save(); currentPack=pack; render();
     const ok=results.filter(x=>x.ok).length;
     toast(`Document Pack ${ok}/${results.length} dokumen berhasil dibuat.`,ok===results.length?'success':'warning');
     return {pack,results};
@@ -134,10 +148,11 @@
     const pack=currentPack || store[currentPackId];
     const d=(pack?.documents||[]).find(x=>x.documentId===documentId);
     if(!d) return toast('Dokumen dalam pack tidak ditemukan.','error');
-    window.currentGeneratedDocument={type:d.type,label:d.label,content:d.content,title:d.title,packId:d.packId,documentId:d.documentId};
+    window.currentGeneratedDocument={type:d.type,label:d.label,content:d.content,title:d.title,packId:d.packId,documentId:d.documentId,revisionId:d.revision?.revisionId||''};
     const out=document.getElementById('generatedDocumentContent'); if(out) out.textContent=d.content;
     const label=document.getElementById('generatedDocLabel'); if(label) label.textContent=d.label;
-    const meta=document.getElementById('documentTraceMeta'); if(meta) meta.textContent=`Pack: ${d.packId} · Document: ${d.documentId}`;
+    const meta=document.getElementById('documentTraceMeta');
+    if(meta) meta.textContent=`Pack: ${d.packId} · Document: ${d.documentId}${d.revision?.revisionId?` · Revision: ${d.revision.revisionId}`:''}`;
     if(typeof validateGeneratedDocument==='function') validateGeneratedDocument();
     toast(`${d.label} dimuat dari Document Pack.`,'success');
   }
@@ -155,24 +170,33 @@
     const p=currentPack || store[currentPackId];
     const box=document.getElementById('v43PackContent');
     if(!box) return;
-    if(!p){
-      box.innerHTML='<p class="text-xs text-slate-500 italic">Belum ada Document Pack.</p>'; return;
-    }
+    if(!p){ box.innerHTML='<p class="text-xs text-slate-500 italic">Belum ada Document Pack.</p>'; return; }
     const docs=TYPES.map(t=>{
       const d=(p.documents||[]).slice().reverse().find(x=>x.type===t.type);
-      return `<div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="flex items-center justify-between gap-3"><div><b class="text-xs text-slate-200">${esc(d?.label||t.label)}</b><div class="text-[11px] text-slate-500 mt-1">${d?`hash ${esc(d.contentHash)} · ${esc(new Date(d.generatedAt).toLocaleString('id-ID'))}`:'Belum dibuat'}</div></div>${d?`<button onclick="window.selectDocumentPackDocumentV43(${JSON.stringify(d.documentId)})" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px]">Muat</button>`:'<span class="text-[11px] text-slate-600">—</span>'}</div><div class="text-[10px] text-slate-500 mt-2">Document ID: ${esc(d?.documentId||`DOC-${p.source.meetingId}-${t.type}-${p.template.id}`)}</div></div>`;
+      const revisionText=d?.revision?.revisionId ? ` · ${esc(d.revision.revisionId)}` : '';
+      return `<div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="flex items-center justify-between gap-3"><div><b class="text-xs text-slate-200">${esc(d?.label||t.label)}</b><div class="text-[11px] text-slate-500 mt-1">${d?`hash ${esc(d.contentHash)} · ${esc(new Date(d.generatedAt).toLocaleString('id-ID'))}`:'Belum dibuat'}</div></div>${d?`<button onclick="window.selectDocumentPackDocumentV43(${JSON.stringify(d.documentId)})" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px]">Muat</button>`:'<span class="text-[11px] text-slate-600">—</span>'}</div><div class="text-[10px] text-slate-500 mt-2">Document ID: ${esc(d?.documentId||`DOC-${p.source.meetingId}-${t.type}-${p.template.id}`)}</div><div class="text-[10px] text-indigo-400 mt-1">Revision: ${revisionText?revisionText.slice(3):'belum ditautkan'}</div></div>`;
     }).join('');
     box.innerHTML=`<div class="grid grid-cols-1 md:grid-cols-2 gap-2">${docs}</div>`;
   }
 
   function injectUI(){
     if(document.getElementById('phase43PackPanel')) return;
-    const docsTab=document.getElementById('docsTab'); if(!docsTab) return;
+    const docsTab=document.getElementById('docsTab');
+    if(!docsTab){ console.warn('Phase 4.3: docsTab belum tersedia.'); return; }
     const panel=document.createElement('div');
     panel.id='phase43PackPanel';
     panel.className='bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl mt-4';
     panel.innerHTML=`<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3 class="font-semibold">📦 PHASE 4.3 — Multi-Document Generation & Document Pack</h3><p class="text-xs text-slate-500 mt-1">Satu meeting menghasilkan paket dokumen terhubung dengan satu Pack ID, source snapshot, template version, dan traceability antar dokumen.</p></div><div class="flex flex-wrap gap-2"><button onclick="window.generateDocumentPackV43()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">📦 Generate Document Pack</button><button onclick="window.exportDocumentPackV43()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs">JSON Pack</button><button onclick="window.runPhase43SelfTest()" class="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-xs">✓ Self-Test</button></div></div><div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4"><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Pack ID</div><div id="v43PackId" class="text-xs font-mono text-slate-300 mt-1 break-all">-</div></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Meeting Source</div><div id="v43SourceId" class="text-xs text-slate-300 mt-1">-</div></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Template</div><div id="v43Template" class="text-xs text-slate-300 mt-1">-</div></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Dokumen</div><div id="v43DocumentCount" class="text-lg font-bold text-indigo-400 mt-1">0/6</div></div></div><div id="v43PackContent"><p class="text-xs text-slate-500 italic">Belum ada Document Pack.</p></div>`;
     docsTab.appendChild(panel);
+  }
+
+  function updateHeader(){
+    const p=currentPack || store[currentPackId];
+    const setText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
+    setText('v43PackId',p?.packId||'-');
+    setText('v43SourceId',p?.source?.meetingId||'-');
+    setText('v43Template',p?.template?`${p.template.name} v${p.template.version}`:'-');
+    setText('v43DocumentCount',`${(p?.documents||[]).length}/${TYPES.length}`);
   }
 
   function selfTest(){
@@ -183,7 +207,8 @@
     c('Storage isolation',STORAGE_KEY!=='meeting_ai_document_revisions_v42' && STORAGE_KEY!=='meeting_ai_history');
     c('Non-destructive source',typeof getCurrentMeetingForDocuments==='function' || !!window.currentAnalysisResult);
     c('Generator available',typeof generateDocumentV4==='function' || typeof generateDocument==='function');
-    const report={phase:'4.3',timestamp:new Date().toISOString(),ok:tests.every(x=>x.passed),results:tests};
+    c('Phase 4.2 revision linkage',typeof buildRevisionSnapshotV42==='function' && typeof restoreDocumentRevisionV42==='function');
+    const report={phase:'4.3',timestamp:new Date().toISOString(),ok:tests.every(x=>x.passed),results:tests,storageKey:STORAGE_KEY};
     console.groupCollapsed(`Phase 4.3 Document Pack: ${report.ok?'PASS':'FAIL'}`); console.table(tests); console.log(report); console.groupEnd();
     toast(`Phase 4.3 Self-Test: ${report.ok?'PASS':'CHECK'}`,report.ok?'success':'warning');
     return report;
@@ -194,15 +219,15 @@
     injectUI();
     if(currentPackId && store[currentPackId]) currentPack=store[currentPackId];
     else { const keys=Object.keys(store); if(keys.length){currentPackId=keys[0];currentPack=store[currentPackId];} }
-    render();
+    render(); updateHeader();
   }
 
   window.generateDocumentPackV43=generatePack;
   window.selectDocumentPackDocumentV43=selectPackDocument;
   window.exportDocumentPackV43=exportPack;
   window.runPhase43SelfTest=selfTest;
-  window.documentPackStoreV43=store;
   window.phase43DocumentTypes=TYPES;
+  Object.defineProperty(window,'documentPackStoreV43',{get:()=>store});
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init,{once:true}); else init();
 })();

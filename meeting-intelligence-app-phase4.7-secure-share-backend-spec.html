@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Meeting Intelligence Ultimate — Phase 4.7</title>
+<style>
+html,body{margin:0;height:100%;background:#020617;color:#e2e8f0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{display:flex;flex-direction:column}
+#bar{height:52px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;background:#0f172a;border-bottom:1px solid #1e293b}
+#title{font-size:14px;font-weight:700}#status{font-size:12px;color:#94a3b8}
+#app{flex:1;border:0;width:100%;background:#020617}
+</style>
+</head>
+<body>
+<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.7</div><div id="status">Memuat baseline + Cloud Distribution + Secure Share Contract…</div></div>
+<iframe id="app" title="Meeting Intelligence Ultimate"></iframe>
+<script>
+(function(){
+  const iframe=document.getElementById('app');
+  const status=document.getElementById('status');
+  const baseline='meeting-intelligence-app-phase4.2-document-versioning-traceability.html';
+  const scripts=[
+    'phase4.2-document-versioning-traceability.js',
+    'phase4.3-document-pack-addon.js',
+    'phase4.3.1-document-pack-revisions-addon.js',
+    'phase4.3.2-document-pack-consistency-addon.js',
+    'phase4.4-document-export-engine-addon.js',
+    'phase4.5-document-distribution-sharing-addon.js',
+    'phase4.6-cloud-distribution-contract-addon.js',
+    'phase4.7-secure-share-backend-spec-addon.js'
+  ];
+  iframe.src=baseline;
+  iframe.addEventListener('load',function(){
+    try{
+      const doc=iframe.contentDocument;
+      if(!doc)throw new Error('Dokumen iframe tidak dapat diakses.');
+      const loadScript=src=>new Promise((resolve,reject)=>{
+        const script=doc.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(new Error(`Gagal memuat ${src}`));doc.body.appendChild(script);
+      });
+      scripts.reduce((p,src)=>p.then(()=>loadScript(src)),Promise.resolve())
+        .then(()=>{status.textContent='Phase 4.7 aktif — Secure Share Backend Contract siap diuji.';})
+        .catch(e=>{status.textContent='Phase 4.7 gagal dimuat: '+e.message;console.warn(e);});
+    }catch(e){status.textContent='Jalankan melalui HTTP lokal untuk menghindari pembatasan iframe/script.';console.warn(e);}
+  });
+})();
+</script>
+</body>
+</html>
