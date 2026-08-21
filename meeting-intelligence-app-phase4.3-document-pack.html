@@ -13,26 +13,33 @@ body{display:flex;flex-direction:column}
 </style>
 </head>
 <body>
-<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.3</div><div id="status">Memuat Phase 4.2 + Document Pack…</div></div>
+<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.3</div><div id="status">Memuat Phase 4.2 runtime + Document Pack…</div></div>
 <iframe id="app" title="Meeting Intelligence Ultimate"></iframe>
 <script>
 (function(){
   const iframe=document.getElementById('app');
   const status=document.getElementById('status');
   const baseline='meeting-intelligence-app-phase4.2-document-versioning-traceability.html';
+  const phase42='phase4.2-document-versioning-traceability.js';
   const addon='phase4.3-document-pack-addon.js';
   iframe.src=baseline;
   iframe.addEventListener('load',function(){
     try{
       const doc=iframe.contentDocument;
       if(!doc) throw new Error('Dokumen iframe tidak dapat diakses.');
-      const script=doc.createElement('script');
-      script.src=addon;
-      script.onload=function(){status.textContent='Phase 4.3 aktif — Document Pack siap digunakan.';};
-      script.onerror=function(){status.textContent='Phase 4.2 terbuka, tetapi addon Phase 4.3 gagal dimuat.';};
-      doc.body.appendChild(script);
+      const loadScript=(src)=>new Promise((resolve,reject)=>{
+        const script=doc.createElement('script');
+        script.src=src;
+        script.onload=resolve;
+        script.onerror=()=>reject(new Error(`Gagal memuat ${src}`));
+        doc.body.appendChild(script);
+      });
+      loadScript(phase42)
+        .then(()=>loadScript(addon))
+        .then(()=>{status.textContent='Phase 4.3 aktif — Phase 4.2 Versioning + Document Pack siap digunakan.';})
+        .catch(e=>{status.textContent='Phase 4.3 gagal dimuat: '+e.message;console.warn('Phase 4.3 launcher:',e);});
     }catch(e){
-      status.textContent='Tidak dapat menyuntikkan Phase 4.3. Jalankan folder melalui HTTP lokal (mis. npx serve) lalu buka launcher ini.';
+      status.textContent='Tidak dapat mengaktifkan Phase 4.3. Jalankan folder melalui HTTP lokal (mis. npx serve) lalu buka launcher ini.';
       console.warn('Phase 4.3 launcher:',e);
     }
   });
