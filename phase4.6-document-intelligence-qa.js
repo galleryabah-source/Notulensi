@@ -6,9 +6,8 @@
  * It validates runtime bridges and performs isolated synthetic checks.
  *
  * Important: the baseline uses top-level `let` bindings for some stable
- * state variables. Those bindings are intentionally checked directly
- * instead of through `window.*`, because top-level `let` is not a window
- * property even though it remains available to subsequent classic scripts.
+ * state variables. Phase 4.2's revision store is different: it is private
+ * to its IIFE and intentionally exposed as `window.documentRevisionStoreV42`.
  */
 (function(){
   'use strict';
@@ -28,7 +27,7 @@
   function result(name,passed,detail){ return {name,passed:Boolean(passed),detail:detail||''}; }
 
   function hash(value){
-    if(typeof hashTextV42==='function') return hashTextV42(value);
+    if(typeof window.hashTextV42==='function') return window.hashTextV42(value);
     let h=2166136261; const s=String(value??'');
     for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
     return (h>>>0).toString(16).padStart(8,'0');
@@ -59,14 +58,13 @@
   function checkDocumentBridges(r){
     DOC_FUNCTIONS.forEach(name=>r.push(result(`Document bridge: ${name}`,typeof window[name]==='function')));
 
-    let revisionStorePresent=false;
-    try{
-      revisionStorePresent=(typeof documentRevisionStoreV42!=='undefined' &&
-        documentRevisionStoreV42 &&
-        typeof documentRevisionStoreV42==='object' &&
-        !Array.isArray(documentRevisionStoreV42));
-    }catch(e){ revisionStorePresent=false; }
-    r.push(result('Phase 4.2 revision store shape',revisionStorePresent));
+    // Phase 4.2 keeps this store private inside its IIFE and exposes a
+    // stable read-only bridge as window.documentRevisionStoreV42.
+    const revisionStore=window.documentRevisionStoreV42;
+    r.push(result(
+      'Phase 4.2 revision store shape',
+      !!revisionStore && typeof revisionStore==='object' && !Array.isArray(revisionStore)
+    ));
 
     r.push(result('Phase 4.3 pack store readable',(()=>{
       const x=safeJson('meeting_ai_document_packs_v43',{});
