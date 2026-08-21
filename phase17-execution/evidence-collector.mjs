@@ -10,10 +10,6 @@ function git(args) { return execFileSync('git', args, { cwd: root, encoding: 'ut
 function loadJson(path) { if (!existsSync(path)) return null; try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } }
 const commit = git(['rev-parse','HEAD']);
 const generatedAt = new Date().toISOString();
-const files = [
-  ['17-E.static.git','Git commit identity'],
-  ['17-E.runtime.health','Runtime health'], ['17-E.runtime.database','Database behavior'], ['17-E.runtime.auth','Authentication/RBAC'], ['17-E.runtime.security','Security regression'], ['17-E.runtime.ai','AI provider and cost controls'], ['17-E.runtime.observability','Observability'], ['17-E.runtime.backup','Backup/restore'], ['17-E.runtime.dr','Disaster recovery'], ['17-E.runtime.performance','Performance/load'], ['17-E.runtime.release','Rollback/canary/release']
-];
 const checks = [{ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit }];
 const runtimeEvidence = loadJson(process.env.RUNTIME_EVIDENCE_INPUT || `${root}/phase17-execution/runtime-evidence.json`);
 const realAuth = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
@@ -23,11 +19,12 @@ const observability = loadJson(process.env.OBSERVABILITY_EVIDENCE_INPUT || `${ro
 const backup = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
 const dr = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
 const performance = loadJson(process.env.PERFORMANCE_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/performance-regression-evidence.json`);
+const release = loadJson(process.env.RELEASE_EVIDENCE_INPUT || `${root}/phase17-execution/release-canary-evidence.json`);
 const runtimeMap = new Map((runtimeEvidence?.checks || []).map(c => [c.id,c]));
-function promote(id, evidence, details) {
+function promote(file, evidence, details) {
   const real = evidence?.applicationRuntimeIntegrated === true && evidence?.integrationFixture === false && evidence?.status === 'PASS' && Array.isArray(evidence?.checks) && evidence.checks.length > 0 && evidence.checks.every(c=>c.status==='PASS');
   const failed = evidence?.status === 'FAIL' || evidence?.checks?.some(c=>c.status==='FAIL');
-  return real ? {status:'PASS',evidence:[`phase17-execution/${id}.json`],details} : failed ? {status:'FAIL',evidence:[`phase17-execution/${id}.json`],details:`${details} Evidence contains a failed executable check.`} : {status:'NOT_RUN',evidence:[`phase17-execution/${id}.json`],details};
+  return real ? {status:'PASS',evidence:[`phase17-execution/${file}.json`],details} : failed ? {status:'FAIL',evidence:[`phase17-execution/${file}.json`],details:`${details} Evidence contains a failed executable check.`} : {status:'NOT_RUN',evidence:[`phase17-execution/${file}.json`],details};
 }
 for (const [id,phase,name,details] of runtimeDomains) {
   let observed = runtimeMap.get(id) || {status:'NOT_RUN',evidence:[],details};
@@ -38,6 +35,7 @@ for (const [id,phase,name,details] of runtimeDomains) {
   if(id==='17-E.runtime.backup') observed = promote('backup-restore-evidence',backup,'Real PostgreSQL backup/restore evidence is required.');
   if(id==='17-E.runtime.dr') observed = promote('disaster-recovery-evidence',dr,'Real disaster-recovery evidence is required.');
   if(id==='17-E.runtime.performance') observed = promote('performance-regression-evidence',performance,'Real application performance evidence is required.');
+  if(id==='17-E.runtime.release') observed = promote('release-canary-evidence',release,'Controlled canary and rollback evidence is required; rollback cannot self-declare success.');
   checks.push({id,phase,name,status:['PASS','FAIL','NOT_RUN'].includes(observed.status)?observed.status:'NOT_RUN',evidence:observed.evidence||[],details:observed.details||details});
 }
 const report={schemaVersion:'1.0.0',runId:randomUUID(),commit,environment:process.env.NODE_ENV==='production'?'production':'local',generatedAt,checks};
