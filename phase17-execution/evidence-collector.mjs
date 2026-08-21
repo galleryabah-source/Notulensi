@@ -23,6 +23,7 @@ const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_E
 const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
 const backupRestoreEvidence = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
 const disasterRecoveryEvidence = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
+const performanceEvidence = loadJson(process.env.PERFORMANCE_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/performance-regression-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
@@ -57,6 +58,13 @@ for (const [id,phase,name,details] of runtimeDomains) {
     if (realDrPass) observed = { status:'PASS', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Controlled database-loss simulation and recovery from a real PostgreSQL recovery point completed with critical-state integrity checks passing.' };
     else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill contains a failed executable recovery check.' };
     else observed = { status:'NOT_RUN', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill has not produced complete real-database recovery evidence.' };
+  }
+  if (id === '17-E.runtime.performance') {
+    const realPerformancePass = performanceEvidence?.applicationRuntimeIntegrated === true && performanceEvidence?.integrationFixture === false && performanceEvidence?.status === 'PASS' && Array.isArray(performanceEvidence.checks) && performanceEvidence.checks.length > 0 && performanceEvidence.checks.every(check => check.status === 'PASS');
+    const failed = performanceEvidence?.checks?.some(check => check.status === 'FAIL') || performanceEvidence?.status === 'FAIL';
+    if (realPerformancePass) observed = { status:'PASS', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Executable performance regression completed against the real application runtime with all configured thresholds passing.' };
+    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Real application performance regression contains a failed executable threshold check.' };
+    else observed = { status:'NOT_RUN', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Performance regression has not produced complete real-application executable evidence.' };
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
 }
