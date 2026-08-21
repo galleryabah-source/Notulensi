@@ -4,6 +4,11 @@
  * Read-only QA harness. It does not mutate meetingHistory, transcript,
  * analysis, revision store, document pack store, or templates.
  * It validates runtime bridges and performs isolated synthetic checks.
+ *
+ * Important: the baseline uses top-level `let` bindings for some stable
+ * state variables. Those bindings are intentionally checked directly
+ * instead of through `window.*`, because top-level `let` is not a window
+ * property even though it remains available to subsequent classic scripts.
  */
 (function(){
   'use strict';
@@ -21,30 +26,59 @@
   ];
 
   function result(name,passed,detail){ return {name,passed:Boolean(passed),detail:detail||''}; }
+
   function hash(value){
-    if(typeof window.hashTextV42==='function') return window.hashTextV42(value);
+    if(typeof hashTextV42==='function') return hashTextV42(value);
     let h=2166136261; const s=String(value??'');
     for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
     return (h>>>0).toString(16).padStart(8,'0');
   }
+
   function safeJson(key,fallback){
-    try{const v=JSON.parse(localStorage.getItem(key)||'');return v&&typeof v==='object'&&!Array.isArray(v)?v:fallback;}
-    catch(e){return fallback;}
+    try{
+      const v=JSON.parse(localStorage.getItem(key)||'');
+      return v&&typeof v==='object'&&!Array.isArray(v)?v:fallback;
+    }catch(e){return fallback;}
   }
+
   function checkCore(r){
     CORE_FUNCTIONS.forEach(name=>r.push(result(`Baseline function: ${name}`,typeof window[name]==='function')));
-    r.push(result('Baseline recording state present',typeof window.isRecording!=='undefined' || typeof window.recognition!=='undefined'));
-    r.push(result('Meeting history store present',typeof window.meetingHistory!=='undefined'));
+
+    // These are lexical global bindings in the baseline, not window properties.
+    let recordingStatePresent=false;
+    try{ recordingStatePresent=(typeof isRecording!=='undefined' || typeof recognition!=='undefined'); }
+    catch(e){ recordingStatePresent=false; }
+    r.push(result('Baseline recording state present',recordingStatePresent));
+
+    let historyPresent=false;
+    try{ historyPresent=(typeof meetingHistory!=='undefined'); }
+    catch(e){ historyPresent=false; }
+    r.push(result('Meeting history store present',historyPresent));
   }
+
   function checkDocumentBridges(r){
     DOC_FUNCTIONS.forEach(name=>r.push(result(`Document bridge: ${name}`,typeof window[name]==='function')));
-    r.push(result('Phase 4.2 revision store shape',!!window.documentRevisionStoreV42 && typeof window.documentRevisionStoreV42==='object' && !Array.isArray(window.documentRevisionStoreV42)));
-    r.push(result('Phase 4.3 pack store readable',(()=>{const x=safeJson('meeting_ai_document_packs_v43',{});return x&&typeof x==='object'&&!Array.isArray(x);})()));
+
+    let revisionStorePresent=false;
+    try{
+      revisionStorePresent=(typeof documentRevisionStoreV42!=='undefined' &&
+        documentRevisionStoreV42 &&
+        typeof documentRevisionStoreV42==='object' &&
+        !Array.isArray(documentRevisionStoreV42));
+    }catch(e){ revisionStorePresent=false; }
+    r.push(result('Phase 4.2 revision store shape',revisionStorePresent));
+
+    r.push(result('Phase 4.3 pack store readable',(()=>{
+      const x=safeJson('meeting_ai_document_packs_v43',{});
+      return x&&typeof x==='object'&&!Array.isArray(x);
+    })()));
   }
+
   function syntheticRevisionChecks(r){
     const a='synthetic document A', b='synthetic document B';
     r.push(result('Deterministic content hash',hash(a)===hash(a)));
     r.push(result('Different content hash',hash(a)!==hash(b)));
+
     const revisions=[];
     const push=(content,templateVersion)=>{
       const contentHash=hash(content),last=revisions[revisions.length-1];
@@ -52,6 +86,7 @@
       const x={revisionId:`DOC-QA:r${revisions.length+1}`,revision:revisions.length+1,content,contentHash,templateVersion};
       revisions.push(x);return x;
     };
+
     push(a,'1.0.0'); push(a,'1.0.0');
     r.push(result('Anti-duplicate synthetic revision',revisions.length===1,`count=${revisions.length}`));
     push(b,'1.0.0');
@@ -60,6 +95,7 @@
     r.push(result('Template change creates next revision',revisions.length===3 && revisions[2].revision===3));
     r.push(result('Revision IDs unique',new Set(revisions.map(x=>x.revisionId)).size===revisions.length));
   }
+
   function packChecks(r){
     const docs=[
       {documentId:'DOC-QA-officialReport-template',contentHash:hash('A')},
@@ -73,6 +109,7 @@
     r.push(result('Pack document IDs distinct',new Set(docs.map(x=>x.documentId)).size===2));
     r.push(result('Pack document count invariant',docs.length<=6));
   }
+
   function traceabilityChecks(r){
     const source={meetingId:'QA-MEETING',transcriptHash:hash('transcript'),analysisHash:hash('analysis')};
     const template={id:'qa-template',version:'1.0.0'};
@@ -82,6 +119,7 @@
     r.push(result('Traceability source hashes present',Boolean(trace.source.transcriptHash&&trace.source.analysisHash)));
     r.push(result('Traceability template version present',trace.template.version==='1.0.0'));
   }
+
   function storageIntegrity(r){
     const keys=['meetingHistory','meeting_ai_document_revisions_v42','meeting_ai_document_packs_v43'];
     keys.forEach(key=>{
@@ -92,6 +130,7 @@
       }catch(e){r.push(result(`Storage JSON valid: ${key}`,false,e.message));}
     });
   }
+
   function runPhase46SelfTest(){
     const r=[];
     checkCore(r);
@@ -105,6 +144,7 @@
     console.table(r);console.log(report);console.groupEnd();
     return report;
   }
+
   function render(){
     if(document.getElementById('phase46QAPanel'))return;
     const host=document.getElementById('docsTab')||document.body;
@@ -117,6 +157,7 @@
       document.getElementById('phase46Result').textContent=JSON.stringify(report,null,2);
     });
   }
+
   window.runPhase46SelfTest=runPhase46SelfTest;
   window.phase46DocumentQAVersion=PHASE;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',render,{once:true});else render();
