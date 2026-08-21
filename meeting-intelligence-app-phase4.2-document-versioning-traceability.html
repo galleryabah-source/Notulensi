@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Meeting Intelligence Ultimate — Phase 2</title>
+<meta name="application-version" content="4.0.0-phase4-document-intelligence">
+<script src="https://cdn.tailwindcss.com">
+/* ========================= PHASE 4.2 — DOCUMENT VERSIONING & TRACEABILITY ========================= */
+const V42_STORAGE_KEY = 'meeting_ai_document_revisions_v42';
+let documentRevisionStoreV42 = {};
+
+function loadDocumentRevisionStoreV42(){
+  try {
+    const raw = safeGet(V42_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    documentRevisionStoreV42 = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch(e){
+    console.warn('Phase 4.2 revision store load failed:', e);
+    documentRevisionStoreV42 = {};
+  }
+}
+function saveDocumentRevisionStoreV42(){
+  try { safeSet(V42_STORAGE_KEY, JSON.stringify(documentRevisionStoreV42)); }
+  catch(e){ console.warn('Phase 4.2 revision store save failed:',e); }
+}
+function hashTextV42(value){
+  let h=2166136261; const text=String(value||'');
+  for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); }
+  return (h>>>0).toString(16).padStart(8,'0');
+}
+function getCurrentTemplateMetaV42(){
+  const key = window.activeDocumentTemplateV41 || '';
+  const store = window.documentTemplatesV41 || {};
+  const t = store[key] || {};
+  return {id:key || 'builtin-unknown', name:t.name || key || 'Template', version:t.version || '1.0.0'};
+}
+function getCurrentSourceIdV42(){
+  const m = typeof getCurrentMeetingForDocuments === 'function' ? getCurrentMeetingForDocuments() : (window.currentAnalysisResult || {});
+  return String(m?.id || window.currentAnalysisResult?.id || 'current-meeting');
+}
+function getCurrentDocumentIdV42(){
+  const d=window.currentGeneratedDocument; if(!d) return '';
+  const t=getCurrentTemplateMetaV42();
+  return `DOC-${getCurrentSourceIdV42()}-${d.type||'document'}-${t.id}`;
+}
+function buildRevisionSnapshotV42(){
+  const d=window.currentGeneratedDocument;
+  if(!d || !d.content) return null;
+  const m=typeof getCurrentMeetingForDocuments==='function' ? getCurrentMeetingForDocuments() : (window.currentAnalysisResult||{});
+  const a=normalizeAnalysis(m?.analysis)||{};
+  const t=getCurrentTemplateMetaV42();
+  const documentId=getCurrentDocumentIdV42();
+  if(!documentId) return null;
+  const revisions=documentRevisionStoreV42[documentId]||[];
+  const last=revisions[revisions.length-1];
+  const contentHash=hashTextV42(d.content);
+  if(last && last.contentHash===contentHash && last.templateVersion===t.version) return last;
+  const revision={
+    revisionId:`${documentId}:r${revisions.length+1}`,
+    documentId,
+    revision:revisions.length+1,
+    type:d.type||'', label:d.label||'', title:d.title||m?.title||'Meeting',
+    content:d.content, contentHash,
+    source:{
+      meetingId:String(m?.id||getCurrentSourceIdV42()), title:m?.title||'', date:m?.date||'', time:m?.time||'', location:m?.location||'',
+      transcriptHash:hashTextV42(m?.transcript||''), analysisHash:hashTextV42(JSON.stringify(a||{})),
+      intelligence:{summary:Boolean(a?.summary), decisions:a?.decisions?.length||0, actionItems:a?.actionItems?.length||0, risks:a?.risks?.length||0, topics:a?.topics?.length||0}
+    },
+    template:{id:t.id,name:t.name,version:t.version},
+    generation:{mode:document.getElementById('documentGenerationMode')?.value||'deterministic',language:document.getElementById('documentLanguage')?.value||'id'},
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  revisions.push(revision);
+  documentRevisionStoreV42[documentId]=revisions;
+  saveDocumentRevisionStoreV42();
+  return revision;
+}
+function renderPhase42Versioning(){
+  const d=window.currentGeneratedDocument; const id=getCurrentDocumentIdV42();
+  const revisions=id ? (documentRevisionStoreV42[id]||[]) : [];
+  const latest=revisions[revisions.length-1];
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  set('v42DocumentId',id||'-'); set('v42RevisionNumber',latest?.revision||0); set('v42TemplateVersion',latest?`${latest.template.name} · v${latest.template.version}`:'-');
+  set('v42GenerationMode',latest?`${latest.generation.mode} · ${latest.generation.language}`:'-'); set('v42RevisionCount',`${revisions.length} revisi`);
+  const list=document.getElementById('v42RevisionList');
+  if(list){
+    list.innerHTML=revisions.length?revisions.slice().reverse().map(r=>`<div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="flex justify-between gap-2"><div><b class="text-xs text-slate-200">v${r.revision} · ${escapeHTML(r.label)}</b><div class="text-[11px] text-slate-500 mt-1">${escapeHTML(new Date(r.createdAt).toLocaleString('id-ID'))} · hash ${escapeHTML(r.contentHash)}</div></div><button onclick="restoreDocumentRevisionV42('${escapeHTML(r.revisionId)}')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px]">Muat</button></div><div class="text-[11px] text-slate-400 mt-2">Template v${escapeHTML(r.template.version)} · ${escapeHTML(r.generation.mode)} · sumber ${escapeHTML(r.source.meetingId)}</div></div>`).join(''):'<p class="text-xs text-slate-500 italic">Belum ada revision snapshot.</p>';
+  }
+  const trace=document.getElementById('v42Traceability');
+  if(trace){
+    if(!latest){trace.innerHTML='<p>Belum ada dokumen aktif.</p>';return;}
+    trace.innerHTML=[
+      ['Document ID',latest.documentId],['Revision ID',latest.revisionId],['Meeting Source',latest.source.meetingId],['Transcript Hash',latest.source.transcriptHash],['Analysis Hash',latest.source.analysisHash],['Template',`${latest.template.name} v${latest.template.version}`],['Mode',latest.generation.mode],['Generated',new Date(latest.createdAt).toLocaleString('id-ID')]
+    ].map(x=>`<div class="flex justify-between gap-3 border-b border-slate-800 pb-1"><span>${escapeHTML(x[0])}</span><span class="text-slate-300 text-right break-all">${escapeHTML(x[1])}</span></div>`).join('');
+  }
+}
+function saveCurrentDocumentRevisionV42(){
+  if(!window.currentGeneratedDocument) return showToast('Buat dokumen terlebih dahulu sebelum menyimpan revisi.','warning');
+  const before=(documentRevisionStoreV42[getCurrentDocumentIdV42()]||[]).length;
+  const r=buildRevisionSnapshotV42();
+  renderPhase42Versioning();
+  if(r && (documentRevisionStoreV42[r.documentId]||[]).length>before) showToast(`Revisi v${r.revision} berhasil disimpan.`, 'success');
+  else showToast('Tidak ada perubahan baru; snapshot terakhir tetap digunakan.','info');
+}
+function restoreDocumentRevisionV42(revisionId){
+  let found=null;
+  Object.values(documentRevisionStoreV42).some(arr=>{const x=(arr||[]).find(r=>r.revisionId===revisionId);if(x){found=x;return true;}return false;});
+  if(!found)return showToast('Revisi tidak ditemukan.','error');
+  window.currentGeneratedDocument={type:found.type,label:found.label,content:found.content,title:found.title,revisionId:found.revisionId};
+  const out=document.getElementById('generatedDocumentContent'); if(out)out.textContent=found.content;
+  const label=document.getElementById('generatedDocLabel'); if(label)label.textContent=found.label+' · v'+found.revision;
+  const meta=document.getElementById('documentTraceMeta'); if(meta)meta.textContent=`Sumber: Meeting #${found.source.meetingId} · ${found.template.name} v${found.template.version} · Revisi ${found.revision}`;
+  renderPhase42Versioning(); showToast(`Revisi v${found.revision} dimuat tanpa mengubah history sumber.`, 'success');
+}
+function exportCurrentRevisionManifestV42(){
+  const id=getCurrentDocumentIdV42(); if(!id)return showToast('Belum ada dokumen aktif.','warning');
+  const revisions=documentRevisionStoreV42[id]||[]; if(!revisions.length)return showToast('Belum ada revision snapshot. Klik Simpan Revisi.','warning');
+  const payload={schemaVersion:'4.2',exportedAt:new Date().toISOString(),documentId:id,revisions};
+  downloadFile(JSON.stringify(payload,null,2),`Document_${sanitizeFilename(window.currentGeneratedDocument?.title||'Meeting')}_RevisionManifest.json`,'application/json');
+}
+function runPhase42SelfTest(){
+  const r=[],c=(n,p,d='')=>r.push({name:n,passed:Boolean(p),detail:d});
+  const before=JSON.stringify(documentRevisionStoreV42);
+  c('Revision store object',documentRevisionStoreV42&&typeof documentRevisionStoreV42==='object'&&!Array.isArray(documentRevisionStoreV42));
+  c('Hash deterministic',hashTextV42('abc')===hashTextV42('abc'));
+  c('Hash differentiates',hashTextV42('abc')!==hashTextV42('abd'));
+  c('Revision schema helper',typeof buildRevisionSnapshotV42==='function'&&typeof restoreDocumentRevisionV42==='function');
+  if(window.currentGeneratedDocument?.content){const x=buildRevisionSnapshotV42();c('Current document snapshot',Boolean(x&&x.documentId&&x.revisionId&&x.source&&x.template&&x.generation));renderPhase42Versioning();}
+  else c('Current document snapshot',true,'Tidak ada dokumen aktif; structural test only.');
+  c('Legacy history untouched',JSON.stringify(meetingHistory)!==undefined);
+  const report={phase:'4.2',timestamp:new Date().toISOString(),ok:r.every(x=>x.passed),results:r,storageKey:V42_STORAGE_KEY};
+  console.groupCollapsed(`Phase 4.2 Document Versioning: ${report.ok?'PASS':'FAIL'}`);console.table(r);console.log(report);console.groupEnd();
+  return report;
+}
+function initPhase42(){loadDocumentRevisionStoreV42();renderPhase42Versioning();}
+window.runPhase42SelfTest=runPhase42SelfTest;window.saveCurrentDocumentRevisionV42=saveCurrentDocumentRevisionV42;window.restoreDocumentRevisionV42=restoreDocumentRevisionV42;window.exportCurrentRevisionManifestV42=exportCurrentRevisionManifestV42;
+(function(){const f=()=>{try{initPhase42()}catch(e){console.warn('Phase 4.2 bootstrap failed',e)}};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',f,{once:true});else f()})();
+/* Auto-snapshot only after a genuinely new generated document; never mutates source history. */
+(function(){const original=window.generateDocument;if(typeof original!=='function')return;window.generateDocument=function(type){const result=original(type);try{buildRevisionSnapshotV42();renderPhase42Versioning()}catch(e){console.warn('Phase 4.2 auto snapshot failed',e)}return result};})();
+</script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{brand:{50:'#eef2ff',500:'#6366f1',600:'#4f46e5',700:'#4338ca'}}}}}</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>body{font-family:Inter,sans-serif}.recording-pulse{animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.65}}::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.7}</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+<header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50"><div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between gap-3 items-center"><div class="flex items-center gap-3"><div class="bg-indigo-600 p-2.5 rounded-xl text-2xl">🧠</div><div><h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Meeting Intelligence AI</h1><p class="text-xs text-slate-400">Phase 3 — Knowledge Base, Continuity & Organizational Memoryal Memory</p></div></div><div class="flex gap-2 items-center"><span id="apiStatusBadge" class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Engine Ready</span><button onclick="openSettingsModal()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs border border-slate-700">⚙️ Pengaturan</button></div></div></header>
+<main class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+<section class="lg:col-span-5 space-y-5">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl"><h2 class="font-semibold mb-4">🎙️ Sesi Rapat</h2><div class="space-y-3">
+<label class="block text-xs text-slate-400">Judul / Agenda<input id="meetingTitle" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm" value="Kegiatan Sosialisasi SOP Izin Tinggal Keimigrasian"></label>
+<div class="grid grid-cols-2 gap-3"><label class="text-xs text-slate-400">Tanggal<input id="meetingDate" type="date" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm"></label><label class="text-xs text-slate-400">Waktu<input id="meetingTime" type="time" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm"></label></div>
+<label class="block text-xs text-slate-400">Tempat<input id="meetingLocation" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm" value="Ruang Rapat Utama"></label>
+<div class="grid grid-cols-2 gap-3"><label class="text-xs text-slate-400">Unit / Instansi<input id="unitKerja" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm" value="Kantor Wilayah Ditjen Imigrasi"></label><label class="text-xs text-slate-400">Kategori<select id="meetingCategory" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm"><option>Dinas / Kedinasan</option><option>Sosialisasi / Bimbingan</option><option>Teknis / Proyek</option><option>Evaluasi / Audit</option></select></label></div>
+<label class="block text-xs text-slate-400">Peserta<textarea id="participants" rows="2" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm">Pejabat Imigrasi, Petugas Imigrasi, Pimpinan Rapat</textarea></label></div>
+<div class="mt-4 p-4 bg-slate-950 border border-slate-800 rounded-xl flex justify-between items-center"><div><div id="statusIndicator" class="text-xs font-bold text-slate-400">STATUS: SIAP</div><div id="timerDisplay" class="text-2xl font-mono text-indigo-400">00:00:00</div></div><div id="recordingWave" class="hidden text-rose-400 text-xl">● ● ●</div></div>
+<div class="mt-4 grid grid-cols-2 gap-3"><button id="startBtn" onclick="toggleRecording()" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl p-3 font-semibold text-sm">🔴 Mulai Rekam</button><button id="stopBtn" onclick="stopRecording()" disabled class="bg-slate-800 text-slate-500 rounded-xl p-3 font-semibold text-sm">⏹️ Selesai</button></div>
+<div class="mt-4 pt-4 border-t border-slate-800"><label class="text-xs text-slate-400">Unggah Audio (.mp3/.wav/.m4a)<input id="audioFileInput" type="file" accept="audio/*" class="mt-2 w-full text-xs"></label><p class="text-[11px] text-slate-500 mt-2">Inline audio maksimum 20 MB pada baseline Phase 2.</p></div></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">⚡ Intelligence Actions</h3><div class="grid grid-cols-2 gap-2"><button onclick="runAITask('full')" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl p-3 text-xs font-semibold">🧠 Analisis Lengkap</button><button onclick="runAITask('decision')" class="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 text-xs">⚖️ Keputusan</button><button onclick="runAITask('actions')" class="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 text-xs">🎯 Action Items</button><button onclick="runAITask('risk')" class="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 text-xs">⚠️ Risiko & Isu</button><button onclick="runAITask('topics')" class="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 text-xs">🧩 Topik</button><button onclick="runAITask('effectiveness')" class="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 text-xs">📈 Efektivitas</button></div></div>
+</section>
+<section class="lg:col-span-7 space-y-5">
+<div class="flex gap-5 border-b border-slate-800 text-sm font-semibold overflow-x-auto"><button id="tabTranscriptBtn" onclick="switchTab('transcriptTab')" class="pb-3 border-b-2 border-indigo-500 text-indigo-400 whitespace-nowrap">Transkrip</button><button id="tabIntelBtn" onclick="switchTab('intelTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Intelligence</button><button id="tabDashboardBtn" onclick="switchTab('dashboardTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Dashboard</button><button id="tabCrossBtn" onclick="switchTab('crossMeetingTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Cross-Meeting</button><button id="tabContinuityBtn" onclick="switchTab('continuityTab')" class="pb-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap">Follow-up & Keputusan</button><button id="tabGraphBtn" onclick="switchTab('knowledgeGraphTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Knowledge Graph</button><button id="tabReportBtn" onclick="switchTab('reportTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Laporan</button><button id="tabDocsBtn" onclick="switchTab('docsTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Dokumen AI</button><button id="tabHistoryBtn" onclick="switchTab('historyTab')" class="pb-3 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Riwayat</button></div>
+<div id="transcriptTab" class="space-y-4"><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex justify-between mb-3"><b class="text-sm">Teks Transkrip</b><div class="flex gap-3 text-xs"><button onclick="clearTranscript()" class="text-rose-400">Hapus</button><button onclick="copyTranscript()" class="text-indigo-400">Salin</button></div></div><textarea id="transcriptInput" rows="20" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm leading-relaxed" placeholder="Masukkan atau rekam transkrip..."></textarea><div class="flex justify-between mt-3 text-xs text-slate-400"><span id="wordCountBadge">Kata: 0</span><span id="charCountBadge">Karakter: 0</span></div><button onclick="runAITask('full')" class="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 rounded-xl p-3 font-semibold text-sm">✨ Jalankan Advanced Meeting Intelligence</button></div></div>
+<div id="intelTab" class="hidden space-y-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Sentimen</p><b id="statSentiment" class="text-emerald-400">—</b></div><div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Keputusan</p><b id="statDecision" class="text-indigo-400">0</b></div><div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Action Items</p><b id="statActions" class="text-cyan-400">0</b></div><div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Efektivitas</p><b id="statEffectiveness" class="text-amber-400">—</b></div></div><div id="intelligenceContent" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 min-h-[420px]"><p class="text-slate-500 italic">Belum ada structured intelligence. Jalankan analisis lengkap.</p></div></div>
+<div id="dashboardTab" class="hidden space-y-4">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Total Sesi</p><b id="dashTotalMeetings" class="text-xl text-indigo-400">0</b></div>
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Rata-rata Efektivitas</p><b id="dashAvgEffectiveness" class="text-xl text-emerald-400">0%</b></div>
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Total Keputusan</p><b id="dashTotalDecisions" class="text-xl text-cyan-400">0</b></div>
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-400">Action Items</p><b id="dashTotalActions" class="text-xl text-amber-400">0</b></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">📊 Distribusi Sentimen</h3><div id="dashSentiment" class="space-y-2"></div></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🎯 Prioritas Action Items</h3><div id="dashPriority" class="space-y-2"></div></div>
+</div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🧩 Topik yang Sering Muncul</h3><div id="dashTopics" class="flex flex-wrap gap-2"></div></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">⚠️ Risiko & Isu dari Arsip</h3><div id="dashRisks" class="space-y-2"></div></div>
+</div>
+<div id="crossMeetingTab" class="hidden space-y-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3 class="font-semibold">🔗 Cross-Meeting Intelligence</h3><p class="text-xs text-slate-500 mt-1">Phase 3.1: melacak kesinambungan keputusan, action item, risiko, dan topik lintas rapat.</p></div><div class="flex gap-2"><button onclick="buildCrossMeetingIntelligence()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">🔄 Analisis Lintas Rapat</button><button onclick="exportCrossMeetingIntelligence()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs">⬇️ Export JSON</button></div></div>
+<div class="grid grid-cols-2 md:grid-cols-5 gap-3"><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Rapat dianalisis</p><b id="crossMeetingCount" class="text-xl text-indigo-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Action terbuka</p><b id="crossOpenActions" class="text-xl text-amber-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Action berulang</p><b id="crossRecurringActions" class="text-xl text-rose-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Risiko berulang</p><b id="crossRecurringRisks" class="text-xl text-orange-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Topik berkelanjutan</p><b id="crossPersistentTopics" class="text-xl text-cyan-400">0</b></div></div></div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🎯 Action Item yang Perlu Perhatian</h3><div id="crossActionAlerts" class="space-y-2"></div></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">⚠️ Risiko yang Meningkat / Berulang</h3><div id="crossRiskAlerts" class="space-y-2"></div></div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🧩 Topik Berkelanjutan</h3><div id="crossTopicContinuity" class="space-y-2"></div></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">⚖️ Decision Continuity</h3><div id="crossDecisionContinuity" class="space-y-2"></div></div>
+</div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">📈 Timeline Intelligence</h3><div id="crossTimeline" class="space-y-2"></div></div>
+</div>
+<div id="continuityTab" class="hidden space-y-4"><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3 class="font-semibold">🎯 Action & Decision Continuity</h3><p class="text-xs text-slate-500 mt-1">Phase 3.2: register tindak lanjut dan keputusan lintas rapat. Status tersimpan terpisah sehingga history asli tetap utuh.</p></div><div class="flex gap-2"><button onclick="refreshContinuityTracker()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">🔄 Sinkronkan</button><button onclick="exportContinuityTracker()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs">⬇️ Export</button></div></div><div class="grid grid-cols-2 md:grid-cols-5 gap-3"><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Total Action</p><b id="contTotalActions" class="text-xl text-indigo-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Open</p><b id="contOpenActions" class="text-xl text-amber-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">In Progress</p><b id="contProgressActions" class="text-xl text-cyan-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Blocked</p><b id="contBlockedActions" class="text-xl text-rose-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Selesai</p><b id="contDoneActions" class="text-xl text-emerald-400">0</b></div></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-4"><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex items-center justify-between mb-3"><h3 class="font-semibold">📌 Action Register</h3><select id="continuityActionFilter" onchange="renderContinuityTracker()" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs"><option value="all">Semua</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Blocked">Blocked</option><option value="Done">Done</option></select></div><div id="continuityActionList" class="space-y-2 max-h-[560px] overflow-y-auto"></div></div><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex items-center justify-between mb-3"><h3 class="font-semibold">⚖️ Decision Register</h3><span class="text-[11px] text-slate-500">Status dapat dikoreksi manual</span></div><div id="continuityDecisionList" class="space-y-2 max-h-[560px] overflow-y-auto"></div></div></div><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🧭 Continuity Alerts</h3><div id="continuityAlerts" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div></div></div><div id="knowledgeGraphTab" class="hidden space-y-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3 class="font-semibold">🕸️ Organizational Knowledge Graph</h3><p class="text-xs text-slate-500 mt-1">Phase 3.3: menghubungkan rapat, orang/PIC, keputusan, action, risiko, dan topik menjadi organizational memory yang dapat ditelusuri.</p></div><div class="flex gap-2"><button onclick="buildKnowledgeGraph()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">🔄 Bangun Graph</button><button onclick="exportKnowledgeGraph()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs">⬇️ Export Graph</button></div></div>
+<div class="grid grid-cols-2 md:grid-cols-6 gap-3"><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Nodes</p><b id="graphNodeCount" class="text-xl text-indigo-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Edges</p><b id="graphEdgeCount" class="text-xl text-cyan-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">People/PIC</p><b id="graphPeopleCount" class="text-xl text-amber-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Meetings</p><b id="graphMeetingCount" class="text-xl text-emerald-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Topics</p><b id="graphTopicCount" class="text-xl text-cyan-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Risks</p><b id="graphRiskCount" class="text-xl text-rose-400">0</b></div></div></div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4"><div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-sm">Visual Graph</h3><select id="graphNodeFilter" onchange="renderKnowledgeGraph()" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs"><option value="all">Semua Relasi</option><option value="person">People/PIC</option><option value="meeting">Meeting</option><option value="decision">Decision</option><option value="action">Action</option><option value="risk">Risk</option><option value="topic">Topic</option></select></div><div id="knowledgeGraphCanvas" class="min-h-[520px] overflow-auto bg-slate-950 rounded-xl border border-slate-800 p-2"></div></div><div class="bg-slate-900 border border-slate-800 rounded-2xl p-4"><h3 class="font-semibold text-sm mb-3">🔎 Graph Inspector</h3><input id="graphSearchInput" oninput="renderKnowledgeGraphInspector()" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs" placeholder="Cari orang, rapat, keputusan, action, risiko, topik..."><div id="graphInspector" class="mt-3 space-y-2 max-h-[500px] overflow-y-auto"><p class="text-xs text-slate-500">Bangun graph untuk melihat relasi.</p></div></div></div>
+</div>
+<div id="reportTab" class="hidden"><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex justify-between items-center mb-3"><b>Laporan Kedinasan</b><div class="flex gap-2"><button onclick="copyReport()" class="px-3 py-2 bg-slate-800 rounded-lg text-xs">Salin</button><button onclick="exportAsText()" class="px-3 py-2 bg-indigo-600 rounded-lg text-xs">TXT</button><button onclick="exportAsMarkdown()" class="px-3 py-2 bg-indigo-600 rounded-lg text-xs">MD</button></div></div><div id="officialReportContent" class="bg-slate-950 border border-slate-800 rounded-xl p-5 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">Belum ada laporan.</div></div></div>
+<div id="docsTab" class="hidden space-y-4">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3 class="font-semibold">📄 Phase 4 — Document Intelligence</h3><p class="text-xs text-slate-500 mt-1">Mengubah intelligence rapat menjadi dokumen siap pakai, dengan traceability ke sumber dan kontrol kualitas sebelum ekspor.</p></div><div class="flex flex-wrap gap-2"><button onclick="generateAllDocuments()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">⚡ Generate Semua</button><button onclick="validateGeneratedDocument()" class="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-xs font-semibold">✓ Validasi</button></div></div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+<label class="text-xs text-slate-400">Jenis Dokumen<select id="generatedDocType" onchange="generateDocument(this.value)" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs"><option value="officialReport">Laporan Dinas</option><option value="minutes">Notulen</option><option value="beritaAcara">Berita Acara</option><option value="executiveBrief">Executive Brief</option><option value="followUpMemo">Memo Tindak Lanjut</option><option value="actionTracker">Action Tracker</option></select></label>
+<label class="text-xs text-slate-400">Mode Generasi<select id="documentGenerationMode" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs"><option value="deterministic">Template Terstruktur</option><option value="ai">AI Enhanced</option></select></label>
+<label class="text-xs text-slate-400">Bahasa<select id="documentLanguage" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs"><option value="id">Bahasa Indonesia Formal</option><option value="en">English</option></select></label>
+</div></div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+<div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex justify-between items-center mb-3"><div><b id="generatedDocLabel">Dokumen</b><p id="documentTraceMeta" class="text-[11px] text-slate-500 mt-1">Sumber: current meeting intelligence</p></div><div class="flex gap-2"><button onclick="copyGeneratedDocument()" class="px-3 py-2 bg-slate-800 rounded-lg text-xs">📋 Salin</button><button onclick="exportGeneratedDocument('txt')" class="px-3 py-2 bg-indigo-600 rounded-lg text-xs">TXT</button><button onclick="exportGeneratedDocument('md')" class="px-3 py-2 bg-indigo-600 rounded-lg text-xs">MD</button></div></div><pre id="generatedDocumentContent" class="min-h-[520px] max-h-[700px] overflow-auto whitespace-pre-wrap bg-slate-950 border border-slate-800 rounded-xl p-5 text-sm leading-relaxed text-slate-300">Pilih jenis dokumen atau klik Generate Semua.</pre></div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-semibold mb-3">🛡️ Quality & Traceability</h3><div id="documentValidation" class="space-y-2 text-xs text-slate-400"><p>Validasi memastikan metadata, sumber, keputusan, action, dan risiko tidak kosong tanpa alasan.</p></div><div class="border-t border-slate-800 mt-4 pt-4"><h4 class="font-semibold text-sm mb-2">📚 Riwayat Dokumen</h4><div id="documentHistoryList" class="space-y-2 max-h-[360px] overflow-y-auto"></div></div></div></div>
+
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl mt-4">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+    <div>
+      <h3 class="font-semibold">🧩 Phase 4.1 — Configurable Document Template Engine</h3>
+      <p class="text-xs text-slate-500 mt-1">Template dapat disesuaikan tanpa mengubah intelligence mentah. Gunakan placeholder metadata dan blok sumber untuk menjaga traceability.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button onclick="saveDocumentTemplate()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">💾 Simpan Template</button>
+      <button onclick="duplicateDocumentTemplate()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs">Duplikat</button>
+      <button onclick="resetDocumentTemplate()" class="px-3 py-2 bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 rounded-lg text-xs">Reset</button>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <label class="text-xs text-slate-400">Template
+      <select id="docTemplateSelect" onchange="loadDocumentTemplateToEditor()" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs"></select>
+    </label>
+    <label class="text-xs text-slate-400">Nama Template
+      <input id="docTemplateName" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs" placeholder="Nama template">
+    </label>
+    <label class="text-xs text-slate-400">Versi
+      <input id="docTemplateVersion" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs" placeholder="1.0.0">
+    </label>
+  </div>
+  <div class="mt-3">
+    <label class="text-xs text-slate-400">Isi Template
+      <textarea id="docTemplateEditor" rows="14" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-mono leading-relaxed" placeholder="Gunakan placeholder seperti {{meeting.title}}"></textarea>
+    </label>
+  </div>
+  <div class="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+      <h4 class="text-xs font-semibold text-slate-300 mb-2">Placeholder tersedia</h4>
+      <div class="grid grid-cols-2 gap-1 text-[11px] text-slate-500">
+        <code>{{meeting.title}}</code><code>{{meeting.date}}</code><code>{{meeting.time}}</code><code>{{meeting.location}}</code>
+        <code>{{meeting.unit}}</code><code>{{meeting.category}}</code><code>{{meeting.participants}}</code><code>{{meeting.duration}}</code>
+        <code>{{analysis.summary}}</code><code>{{analysis.sentiment}}</code><code>{{analysis.keyPoints}}</code><code>{{analysis.decisions}}</code>
+        <code>{{analysis.actionItems}}</code><code>{{analysis.risks}}</code><code>{{analysis.questions}}</code><code>{{analysis.topics}}</code>
+        <code>{{meta.generatedAt}}</code><code>{{meta.sourceId}}</code>
+      </div>
+    </div>
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+      <h4 class="text-xs font-semibold text-slate-300 mb-2">Traceability</h4>
+      <div id="documentSourceMap" class="text-[11px] text-slate-500">Belum ada dokumen yang dirender.</div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl mt-4">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+    <div>
+      <h3 class="font-semibold">🧾 Phase 4.2 — Document Versioning & Traceability</h3>
+      <p class="text-xs text-slate-500 mt-1">Setiap dokumen memiliki ID sumber, versi template, mode generasi, revisi, dan snapshot intelligence sehingga perubahan dapat dilacak tanpa menimpa dokumen lama.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button onclick="saveCurrentDocumentRevisionV42()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">💾 Simpan Revisi</button>
+      <button onclick="exportCurrentRevisionManifestV42()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs">JSON Manifest</button>
+      <button onclick="runPhase42SelfTest()" class="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-xs">✓ Self-Test</button>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Document ID</div><div id="v42DocumentId" class="text-xs font-mono text-slate-300 mt-1 break-all">-</div></div>
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Revisi Aktif</div><div id="v42RevisionNumber" class="text-lg font-bold text-indigo-400 mt-1">0</div></div>
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Template</div><div id="v42TemplateVersion" class="text-xs text-slate-300 mt-1">-</div></div>
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="text-[11px] text-slate-500">Generation</div><div id="v42GenerationMode" class="text-xs text-slate-300 mt-1">-</div></div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 bg-slate-950 border border-slate-800 rounded-xl p-4">
+      <div class="flex justify-between items-center mb-3"><h4 class="font-semibold text-sm">Revision Timeline</h4><span id="v42RevisionCount" class="text-[11px] text-slate-500">0 revisi</span></div>
+      <div id="v42RevisionList" class="space-y-2 max-h-[420px] overflow-y-auto"><p class="text-xs text-slate-500 italic">Belum ada revision snapshot.</p></div>
+    </div>
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+      <h4 class="font-semibold text-sm mb-3">Source Traceability</h4>
+      <div id="v42Traceability" class="space-y-2 text-xs text-slate-400"><p>Belum ada dokumen aktif.</p></div>
+    </div>
+  </div>
+</div>
+<div id="historyTab" class="hidden"><div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex justify-between mb-4"><b>Arsip Riwayat</b><button onclick="clearHistory()" class="text-xs text-rose-400">Hapus Semua</button></div><div id="historyListContainer" class="space-y-3"></div></div></div>
+</section><section id="knowledgeBaseSection" class="max-w-7xl mx-auto px-4 md:px-6 pb-8 space-y-5">
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h2 class="text-lg font-semibold">🧠 Knowledge Base & Organizational Memory</h2><p class="text-xs text-slate-500 mt-1">Phase 3 foundation: menghubungkan banyak rapat, keputusan, action item, risiko, dan topik tanpa mengubah history lama.</p></div><div class="flex flex-wrap gap-2"><button onclick="buildKnowledgeBase()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold">🔄 Bangun Knowledge Base</button><button onclick="exportKnowledgeBase()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs">⬇️ Export KB</button><button onclick="document.getElementById('kbImportInput').click()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs">⬆️ Import KB</button><input id="kbImportInput" type="file" accept="application/json" class="hidden" onchange="importKnowledgeBase(event)"></div></div>
+<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Meetings</p><b id="kbMeetings" class="text-xl text-indigo-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Decisions</p><b id="kbDecisions" class="text-xl text-cyan-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Actions</p><b id="kbActions" class="text-xl text-amber-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Risks</p><b id="kbRisks" class="text-xl text-rose-400">0</b></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-xs text-slate-500">Topics</p><b id="kbTopics" class="text-xl text-emerald-400">0</b></div></div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="lg:col-span-2 bg-slate-950 border border-slate-800 rounded-xl p-4"><label class="text-xs text-slate-400">Cari Knowledge Base</label><div class="flex gap-2 mt-2"><input id="kbSearchInput" oninput="searchKnowledgeBase()" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" placeholder="Cari judul, keputusan, action item, risiko, topik..."><select id="kbSearchType" onchange="searchKnowledgeBase()" class="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs"><option value="all">Semua</option><option value="meeting">Meeting</option><option value="decision">Keputusan</option><option value="action">Action</option><option value="risk">Risiko</option><option value="topic">Topik</option></select></div><div id="kbSearchResults" class="mt-4 space-y-2 max-h-80 overflow-y-auto"><p class="text-xs text-slate-500">Bangun Knowledge Base untuk melihat hasil.</p></div></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-4"><h3 class="font-semibold text-sm mb-3">🔗 Meeting Terkait</h3><div id="kbRelatedMeetings" class="space-y-2"><p class="text-xs text-slate-500">Pilih hasil pencarian untuk melihat relasi.</p></div></div></div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"><div class="bg-slate-950 border border-slate-800 rounded-xl p-4"><h3 class="font-semibold text-sm mb-3">🔥 Topik Dominan</h3><div id="kbTopTopics" class="flex flex-wrap gap-2"></div></div><div class="bg-slate-950 border border-slate-800 rounded-xl p-4"><h3 class="font-semibold text-sm mb-3">⚠️ Risiko yang Berulang</h3><div id="kbRecurringRisks" class="space-y-2"></div></div></div></div></section>
+</main>
+<div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"><div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-2xl"><div class="flex justify-between mb-4"><b>⚙️ Pengaturan</b><button onclick="closeSettingsModal()">✕</button></div><label class="text-xs text-slate-400">Gemini API Key<input id="customApiKey" type="password" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm"></label><label class="block text-xs text-slate-400 mt-4">Template Laporan<textarea id="templateInput" rows="10" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm font-mono"></textarea></label><div class="flex justify-end gap-2 mt-4"><button onclick="closeSettingsModal()" class="px-4 py-2 bg-slate-800 rounded-lg text-xs">Batal</button><button onclick="saveSettings()" class="px-4 py-2 bg-indigo-600 rounded-lg text-xs">Simpan</button></div></div></div>
+<div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2"></div>
+<script>
+const GEMINI_TEXT_MODEL='gemini-3-flash-preview',GEMINI_AUDIO_MODEL='gemini-3.6-flash',MAX_INLINE_AUDIO_BYTES=20*1024*1024;
+let recognition=null,isRecording=false,recordingStartTime=null,timerInterval=null,finalTranscriptBuffer='',meetingHistory=[],currentAnalysisResult=null,isAIProcessing=false;
+let appSettings={apiKey:'',template:''};
+const DEFAULT_TEMPLATE=`LAPORAN ATENSI PIMPINAN\n\nKepada Yth.\nKepala Kantor Wilayah Direktorat Jenderal Imigrasi Jawa Barat\n\nDari\nKepala Bidang Dokumen Perjalanan, Izin Tinggal dan Status Keimigrasian\n\nBersama ini dengan hormat dilaporkan hal-hal sebagai berikut:\n\nI. KEGIATAN\n[JUDUL]\n\nII. TEMPAT DAN WAKTU\n1. Hari/Tanggal: [TANGGAL]\n2. Waktu: [WAKTU] WIB s.d. selesai\n3. Tempat: [TEMPAT]\n4. Peserta: [PESERTA]\n\nIII. TUJUAN KEGIATAN\n[TUJUAN]\n\nIV. URAIAN KEGIATAN\n[URAIAN]\n\nV. HASIL KEGIATAN\n[HASIL]\n\nVI. KESIMPULAN\n[KESIMPULAN]\n\nVII. PENUTUP\nDemikian laporan kegiatan ini disampaikan. Mohon kiranya Pimpinan dapat memaklumi.`;
+const $=id=>document.getElementById(id);
+function safeGet(k){try{return localStorage.getItem(k)}catch{return null}}function safeSet(k,v){try{localStorage.setItem(k,v);return true}catch{return false}}function safeRemove(k){try{localStorage.removeItem(k)}catch{}}
+function showToast(msg,type='info'){const d=document.createElement('div');d.className='px-4 py-3 rounded-xl border shadow-xl text-xs bg-slate-800 border-slate-700 text-slate-200';if(type==='success')d.className+=' text-emerald-300 border-emerald-700';if(type==='error')d.className+=' text-rose-300 border-rose-700';if(type==='warning')d.className+=' text-amber-300 border-amber-700';d.textContent=msg;$('toastContainer').appendChild(d);setTimeout(()=>d.remove(),3500)}
+function escapeHTML(v=''){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
+function sanitizeFilename(v){return String(v||'Meeting').trim().replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\s_-]/g,'').replace(/\s+/g,'_').slice(0,100)||'Meeting'}
+function loadSettings(){try{const x=JSON.parse(safeGet('meeting_ai_settings')||'{}');appSettings={...appSettings,...x}}catch{}if(!appSettings.template)appSettings.template=DEFAULT_TEMPLATE;$('customApiKey').value=appSettings.apiKey||'';$('templateInput').value=appSettings.template}
+function openSettingsModal(){$('customApiKey').value=appSettings.apiKey||'';$('templateInput').value=appSettings.template;$('settingsModal').classList.remove('hidden')}function closeSettingsModal(){$('settingsModal').classList.add('hidden')}function saveSettings(){appSettings.apiKey=$('customApiKey').value.trim();appSettings.template=$('templateInput').value.trim()||DEFAULT_TEMPLATE;safeSet('meeting_ai_settings',JSON.stringify(appSettings));closeSettingsModal();updateApiBadge();showToast('Pengaturan disimpan.','success')}
+function updateApiBadge(){const b=$('apiStatusBadge');if(appSettings.apiKey.trim()){b.textContent='Gemini API Ready';b.className='px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}else{b.textContent='Offline / API Key belum diisi';b.className='px-3 py-1 text-xs rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20'}}
+function initSpeechRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='id-ID';recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)finalTranscriptBuffer+=e.results[i][0].transcript+' ';else interim+=e.results[i][0].transcript}$('transcriptInput').value=finalTranscriptBuffer+interim;updateCounts()};recognition.onend=()=>{if(isRecording)try{recognition.start()}catch{}};recognition.onerror=e=>console.warn('SpeechRecognition:',e.error)}
+function toggleRecording(){isRecording?stopRecording():startRecording()}function startRecording(){if(!recognition){showToast('Browser tidak mendukung Web Speech API.','error');return}finalTranscriptBuffer=$('transcriptInput').value;try{recognition.start()}catch{}isRecording=true;recordingStartTime=Date.now();$('startBtn').textContent='⏹️ Hentikan Rekam';$('stopBtn').disabled=false;$('statusIndicator').textContent='STATUS: MEREKAM';$('statusIndicator').className='text-xs font-bold text-rose-400 recording-pulse';$('recordingWave').classList.remove('hidden');timerInterval=setInterval(updateTimer,1000);showToast('Perekaman dimulai.','info')}
+function stopRecording(){if(!isRecording)return;try{recognition.stop()}catch{}isRecording=false;clearInterval(timerInterval);$('startBtn').textContent='🔴 Mulai Rekam';$('stopBtn').disabled=true;$('statusIndicator').textContent='STATUS: SELESAI SESI';$('statusIndicator').className='text-xs font-bold text-emerald-400';$('recordingWave').classList.add('hidden');showToast('Perekaman selesai.','success')}
+function updateTimer(){if(!recordingStartTime)return;let s=Math.floor((Date.now()-recordingStartTime)/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;$('timerDisplay').textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
+function updateCounts(){const t=$('transcriptInput').value; $('wordCountBadge').textContent='Kata: '+(t.trim()?t.trim().split(/\s+/).length:0);$('charCountBadge').textContent='Karakter: '+t.length}function clearTranscript(){if(confirm('Kosongkan transkrip?')){$('transcriptInput').value='';finalTranscriptBuffer='';updateCounts()}}async function copyText(t,msg){try{await navigator.clipboard.writeText(t);showToast(msg,'success')}catch{showToast('Gagal menyalin.','warning')}}function copyTranscript(){copyText($('transcriptInput').value,'Transkrip disalin.')}function copyReport(){copyText(currentAnalysisResult?.rawAI||$('officialReportContent').innerText,'Laporan disalin.')}
+function switchTab(tabId){const tabs=['transcriptTab','intelTab','dashboardTab','crossMeetingTab','continuityTab','knowledgeGraphTab','reportTab','docsTab','historyTab'];tabs.forEach(id=>$(id)?.classList.add('hidden'));['tabTranscriptBtn','tabIntelBtn','tabDashboardBtn','tabCrossBtn','tabContinuityBtn','tabGraphBtn','tabReportBtn','tabDocsBtn','tabHistoryBtn'].forEach(id=>$(id)?.classList.remove('border-indigo-500','text-indigo-400'));['tabTranscriptBtn','tabIntelBtn','tabDashboardBtn','tabCrossBtn','tabContinuityBtn','tabGraphBtn','tabReportBtn','tabDocsBtn','tabHistoryBtn'].forEach(id=>$(id)?.classList.add('border-transparent','text-slate-400'));$(tabId)?.classList.remove('hidden');const map={transcriptTab:'tabTranscriptBtn',intelTab:'tabIntelBtn',dashboardTab:'tabDashboardBtn',crossMeetingTab:'tabCrossBtn',continuityTab:'tabContinuityBtn',knowledgeGraphTab:'tabGraphBtn',reportTab:'tabReportBtn',docsTab:'tabDocsBtn',historyTab:'tabHistoryBtn'};const active=$(map[tabId]);if(active){active.classList.remove('border-transparent','text-slate-400');active.classList.add('border-indigo-500','text-indigo-400')}if(tabId==='dashboardTab')renderDashboard();if(tabId==='crossMeetingTab')renderCrossMeetingIntelligence();if(tabId==='continuityTab')renderContinuityTracker();if(tabId==='knowledgeGraphTab'){buildKnowledgeGraph();renderKnowledgeGraphInspector()}}
+async function callGemini(prompt,schema=null){const key=appSettings.apiKey.trim();if(!key)throw Error('Gemini API Key belum disetel.');const url=`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${encodeURIComponent(key)}`;const payload={contents:[{parts:[{text:prompt}]}]};if(schema)payload.generationConfig={responseMimeType:'application/json',responseSchema:schema};let last;for(let i=0;i<3;i++){try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j?.error?.message||`HTTP ${r.status}`);const text=j.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('').trim();if(!text)throw Error('Respons Gemini kosong.');return schema?JSON.parse(text):text}catch(e){last=e;if(i<2)await new Promise(r=>setTimeout(r,1000*2**i))}}throw last||Error('Gemini gagal')}
+const SCHEMA={type:'object',properties:{summary:{type:'string'},sentiment:{type:'string',enum:['Positif','Netral','Kritis','Tegang','Campuran']},sentimentReason:{type:'string'},keyPoints:{type:'array',items:{type:'string'}},decisions:{type:'array',items:{type:'string'}},actionItems:{type:'array',items:{type:'object',properties:{task:{type:'string'},owner:{type:'string'},deadline:{type:'string'},priority:{type:'string',enum:['High','Medium','Low','Unknown']}},required:['task','owner','deadline','priority']}},risks:{type:'array',items:{type:'string'}},questions:{type:'array',items:{type:'string'}},topics:{type:'array',items:{type:'string'}},speakers:{type:'array',items:{type:'object',properties:{name:{type:'string'},contribution:{type:'string'},evidence:{type:'string'}},required:['name','contribution','evidence']}},effectiveness:{type:'object',properties:{score:{type:'number'},strengths:{type:'array',items:{type:'string'}},gaps:{type:'array',items:{type:'string'}},recommendation:{type:'string'}},required:['score','strengths','gaps','recommendation']}},required:['summary','sentiment','sentimentReason','keyPoints','decisions','actionItems','risks','questions','topics','speakers','effectiveness']};
+function normalizeAnalysis(a){if(!a||typeof a!=='object')return null;const arr=(x)=>Array.isArray(x)?x.map(v=>String(v||'')).filter(Boolean):[];return{summary:String(a.summary||''),sentiment:String(a.sentiment||''),sentimentReason:String(a.sentimentReason||''),keyPoints:arr(a.keyPoints),decisions:arr(a.decisions),actionItems:Array.isArray(a.actionItems)?a.actionItems.map(x=>({task:String(x?.task||''),owner:String(x?.owner||'Tidak disebutkan'),deadline:String(x?.deadline||'Tidak disebutkan'),priority:String(x?.priority||'Unknown')})).filter(x=>x.task.trim()):[],risks:arr(a.risks),questions:arr(a.questions),topics:arr(a.topics),speakers:Array.isArray(a.speakers)?a.speakers.map(x=>({name:String(x?.name||'Tidak teridentifikasi'),contribution:String(x?.contribution||''),evidence:String(x?.evidence||'')})).filter(x=>x.contribution):[],effectiveness:{score:Number.isFinite(Number(a.effectiveness?.score))?Math.max(0,Math.min(100,Number(a.effectiveness.score))):0,strengths:arr(a.effectiveness?.strengths),gaps:arr(a.effectiveness?.gaps),recommendation:String(a.effectiveness?.recommendation||'')}}}
+async function analyzeStructured(t){const prompt=`Analisis transkrip rapat secara objektif sebagai Meeting Intelligence Engine. Jangan mengarang. Jika PIC/deadline/nama pembicara tidak dapat diketahui, nyatakan tidak disebutkan/tidak teridentifikasi. Nilai efektivitas 0-100 berdasarkan kejelasan tujuan, keputusan, tindak lanjut, risiko, dan partisipasi.\n\nTRANSKRIP:\n${t}`;return normalizeAnalysis(await callGemini(prompt,SCHEMA))}
+async function buildOfficialReport(t,a){const d={title:$('meetingTitle').value,date:$('meetingDate').value,time:$('meetingTime').value,location:$('meetingLocation').value,unit:$('unitKerja').value,participants:$('participants').value};const prompt=`Buat laporan kedinasan formal berdasarkan DATA dan INTELLIGENCE berikut. Ikuti template. Jangan menambahkan fakta yang tidak tersedia.\nDATA:${JSON.stringify(d)}\nINTELLIGENCE:${JSON.stringify(a)}\nTRANSKRIP:${t}\nTEMPLATE:${appSettings.template}`;return callGemini(prompt)}
+function renderIntelligence(a){a=normalizeAnalysis(a);if(!a)return;$('statSentiment').textContent=a.sentiment||'—';$('statDecision').textContent=a.decisions.length;$('statActions').textContent=a.actionItems.length;$('statEffectiveness').textContent=(a.effectiveness.score||0)+'%';const block=(title,items)=>items.length?`<section class="mb-5"><h4 class="font-semibold text-indigo-400 mb-2">${escapeHTML(title)}</h4><ul class="list-disc pl-5 space-y-1 text-sm text-slate-300">${items.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul></section>`:'';const actions=a.actionItems.length?`<section class="mb-5"><h4 class="font-semibold text-indigo-400 mb-2">🎯 Action Items</h4><div class="space-y-2">${a.actionItems.map((x,i)=>`<div class="border border-slate-700 rounded-xl p-3 bg-slate-950"><b>${i+1}. ${escapeHTML(x.task)}</b><div class="text-xs text-slate-400 mt-1">PIC: ${escapeHTML(x.owner)} · Deadline: ${escapeHTML(x.deadline)} · Prioritas: ${escapeHTML(x.priority)}</div></div>`).join('')}</div></section>`:'';const speakers=a.speakers.length?`<section class="mb-5"><h4 class="font-semibold text-indigo-400 mb-2">🎤 Speaker Intelligence</h4>${a.speakers.map(x=>`<div class="mb-2"><b>${escapeHTML(x.name)}</b><p class="text-sm text-slate-300">${escapeHTML(x.contribution)}</p><p class="text-xs text-slate-500">Bukti: ${escapeHTML(x.evidence)}</p></div>`).join('')}</section>`:'';const eff=`<section class="mb-5"><h4 class="font-semibold text-indigo-400 mb-2">📈 Meeting Effectiveness — ${a.effectiveness.score}%</h4>${block('Kekuatan',a.effectiveness.strengths)}${block('Gap',a.effectiveness.gaps)}<p class="text-sm text-slate-300"><b>Rekomendasi:</b> ${escapeHTML(a.effectiveness.recommendation)}</p></section>`;$('intelligenceContent').innerHTML=`<section class="mb-5"><h4 class="font-semibold text-indigo-400 mb-2">Ringkasan Eksekutif</h4><p class="text-sm text-slate-300">${escapeHTML(a.summary)}</p><p class="text-xs text-slate-400 mt-2">Sentimen: ${escapeHTML(a.sentiment)} — ${escapeHTML(a.sentimentReason)}</p></section>${block('Poin Utama',a.keyPoints)}${block('Keputusan',a.decisions)}${actions}${block('Risiko & Isu',a.risks)}${block('Pertanyaan Terbuka',a.questions)}${block('Topik',a.topics)}${speakers}${eff}`}
+async function runAITask(type){if(isAIProcessing)return showToast('Proses AI masih berjalan.','warning');const t=$('transcriptInput').value.trim();if(!t)return showToast('Transkrip masih kosong.','error');if(!appSettings.apiKey.trim())return showToast('Isi Gemini API Key pada Pengaturan untuk Phase 2 Intelligence.','warning');isAIProcessing=true;showToast('AI sedang menganalisis rapat...','info');try{let a=currentAnalysisResult?.analysis;if(!a||type==='full'||['decision','actions','risk','topics','effectiveness'].includes(type))a=await analyzeStructured(t);currentAnalysisResult={...(currentAnalysisResult||{}),id:currentAnalysisResult?.id||Date.now(),title:$('meetingTitle').value,unit:$('unitKerja').value,category:$('meetingCategory').value,participants:$('participants').value,date:$('meetingDate').value,time:$('meetingTime').value,location:$('meetingLocation').value,duration:$('timerDisplay').textContent,transcript:t,analysis:a,rawAI:currentAnalysisResult?.rawAI||'',timestamp:new Date().toLocaleString('id-ID')};renderIntelligence(a);if(type==='full'){currentAnalysisResult.rawAI=await buildOfficialReport(t,a);$('officialReportContent').textContent=currentAnalysisResult.rawAI;switchTab('reportTab')}else switchTab('intelTab');saveHistory();showToast('Analisis berhasil diperbarui.','success')}catch(e){console.error(e);showToast('Analisis gagal: '+e.message,'error')}finally{isAIProcessing=false}}
+function renderDashboard(){const records=meetingHistory.map(normalizeRecord).filter(Boolean);const total=records.length;const analyses=records.map(x=>normalizeAnalysis(x.analysis)).filter(Boolean);const avg=analyses.length?Math.round(analyses.reduce((n,a)=>n+Number(a.effectiveness.score||0),0)/analyses.length):0;const decisions=analyses.reduce((n,a)=>n+a.decisions.length,0);const actions=analyses.reduce((n,a)=>n+a.actionItems.length,0);$('dashTotalMeetings').textContent=total;$('dashAvgEffectiveness').textContent=avg+'%';$('dashTotalDecisions').textContent=decisions;$('dashTotalActions').textContent=actions;const sentiment={Positif:0,Netral:0,Kritis:0,Tegang:0,Campuran:0};analyses.forEach(a=>{if(sentiment[a.sentiment]!==undefined)sentiment[a.sentiment]++});const maxS=Math.max(1,...Object.values(sentiment));$('dashSentiment').innerHTML=Object.entries(sentiment).filter(([,v])=>v>0).map(([k,v])=>`<div class="flex items-center gap-2"><span class="w-16 text-xs text-slate-400">${escapeHTML(k)}</span><div class="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-indigo-500" style="width:${Math.round(v/maxS*100)}%"></div></div><b class="text-xs w-6 text-right">${v}</b></div>`).join('')||'<p class="text-xs text-slate-500">Belum ada data.</p>';const pr={High:0,Medium:0,Low:0,Unknown:0};analyses.forEach(a=>a.actionItems.forEach(x=>{pr[x.priority]!==undefined?pr[x.priority]++:pr.Unknown++}));const maxP=Math.max(1,...Object.values(pr));$('dashPriority').innerHTML=Object.entries(pr).filter(([,v])=>v>0).map(([k,v])=>`<div class="flex items-center gap-2"><span class="w-16 text-xs text-slate-400">${k}</span><div class="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-amber-500" style="width:${Math.round(v/maxP*100)}%"></div></div><b class="text-xs w-6 text-right">${v}</b></div>`).join('')||'<p class="text-xs text-slate-500">Belum ada action item.</p>';const topics={};analyses.forEach(a=>a.topics.forEach(t=>{const k=t.trim();if(k)topics[k]=(topics[k]||0)+1}));const topTopics=Object.entries(topics).sort((a,b)=>b[1]-a[1]).slice(0,20);$('dashTopics').innerHTML=topTopics.map(([k,v])=>`<span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs">${escapeHTML(k)} · ${v}</span>`).join('')||'<span class="text-xs text-slate-500">Belum ada topik.</span>';const risks=[];analyses.forEach((a,i)=>a.risks.forEach(r=>risks.push({text:r,title:records[i]?.title||'Meeting'})));$('dashRisks').innerHTML=risks.slice(0,15).map(x=>`<div class="border border-rose-900/40 bg-rose-950/20 rounded-lg p-3"><p class="text-sm text-slate-300">${escapeHTML(x.text)}</p><p class="text-[11px] text-slate-500 mt-1">${escapeHTML(x.title)}</p></div>`).join('')||'<p class="text-xs text-slate-500">Belum ada risiko atau isu teridentifikasi.</p>'}
+
+function saveHistory(){meetingHistory=meetingHistory.filter(x=>x.id!==currentAnalysisResult.id);meetingHistory.unshift(currentAnalysisResult);safeSet('meeting_ai_history',JSON.stringify(meetingHistory));renderHistory();renderDashboard()}function normalizeRecord(x){if(!x||typeof x!=='object')return null;return{...x,analysis:normalizeAnalysis(x.analysis),rawAI:String(x.rawAI||''),transcript:String(x.transcript||'')}}function loadHistory(){try{meetingHistory=(JSON.parse(safeGet('meeting_ai_history')||'[]')||[]).map(normalizeRecord).filter(Boolean)}catch{meetingHistory=[]}renderHistory()}function renderHistory(){const c=$('historyListContainer');if(!meetingHistory.length){c.innerHTML='<p class="text-slate-500 text-sm italic text-center">Belum ada riwayat.</p>';return}c.innerHTML=meetingHistory.map(x=>`<div class="border border-slate-700 rounded-xl p-4 bg-slate-950 flex justify-between gap-3"><div><b class="text-sm">${escapeHTML(x.title||'Meeting')}</b><p class="text-xs text-slate-500 mt-1">${escapeHTML(x.date||x.timestamp||'-')} · ${escapeHTML(x.location||'-')}</p></div><div class="flex gap-2"><button onclick="loadHistoryItem(${Number(x.id)})" class="px-3 py-1.5 bg-indigo-600 rounded-lg text-xs">Muat</button><button onclick="deleteHistoryItem(${Number(x.id)})" class="px-3 py-1.5 bg-rose-900/40 text-rose-300 rounded-lg text-xs">Hapus</button></div></div>`).join('')}function loadHistoryItem(id){const x=meetingHistory.find(v=>v.id===id);if(!x)return;currentAnalysisResult=x;$('meetingTitle').value=x.title||'';$('meetingDate').value=x.date||'';$('meetingTime').value=x.time||'';$('meetingLocation').value=x.location||'';$('unitKerja').value=x.unit||'';$('meetingCategory').value=x.category||'';$('participants').value=x.participants||'';$('transcriptInput').value=x.transcript||'';updateCounts();renderIntelligence(x.analysis);$('officialReportContent').textContent=x.rawAI||'Belum ada laporan.';switchTab('intelTab');showToast('Arsip dimuat.','success')}function deleteHistoryItem(id){meetingHistory=meetingHistory.filter(x=>x.id!==id);safeSet('meeting_ai_history',JSON.stringify(meetingHistory));renderHistory();renderDashboard()}function clearHistory(){if(confirm('Hapus seluruh riwayat?')){meetingHistory=[];safeRemove('meeting_ai_history');renderHistory();renderDashboard()}}
+function download(content,name,type){const a=document.createElement('a'),u=URL.createObjectURL(new Blob([content],{type}));a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);showToast('File berhasil diunduh.','success')}function exportAsText(){if(!currentAnalysisResult)return showToast('Belum ada laporan.','error');download(currentAnalysisResult.rawAI||$('officialReportContent').innerText,'Laporan_'+sanitizeFilename(currentAnalysisResult.title)+'.txt','text/plain')}function exportAsMarkdown(){if(!currentAnalysisResult)return showToast('Belum ada laporan.','error');download(currentAnalysisResult.rawAI||$('officialReportContent').innerText,'Laporan_'+sanitizeFilename(currentAnalysisResult.title)+'.md','text/markdown')}
+async function transcribeUpload(file){if(!appSettings.apiKey.trim())throw Error('Gemini API Key belum disetel.');if(file.size>MAX_INLINE_AUDIO_BYTES)throw Error('File melebihi 20 MB.');const b=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=()=>rej(Error('Gagal membaca audio.'));r.readAsDataURL(file)});const url=`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_AUDIO_MODEL}:generateContent?key=${encodeURIComponent(appSettings.apiKey.trim())}`;const body={contents:[{parts:[{text:'Transkripsikan audio rapat ke bahasa Indonesia secara akurat. Jangan mengarang.'},{inlineData:{mimeType:file.type,data:b}}]}]};const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw Error(j?.error?.message||`HTTP ${r.status}`);return j.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('').trim()||''}
+function getCurrentMeetingForDocuments(){
+if(currentAnalysisResult)return normalizeRecord(currentAnalysisResult);
+const transcript=$('transcriptInput')?.value?.trim()||'';
+return normalizeRecord({id:Date.now(),title:$('meetingTitle')?.value||'Meeting Tanpa Judul',unit:$('unitKerja')?.value||'',category:$('meetingCategory')?.value||'',participants:$('participants')?.value||'',date:$('meetingDate')?.value||'',time:$('meetingTime')?.value||'',location:$('meetingLocation')?.value||'',duration:$('timerDisplay')?.textContent||'00:00',transcript,rawAI:'',analysis:null,timestamp:new Date().toLocaleString('id-ID')});
+}
+function fmtDate(v){if(!v)return '-';try{return new Date(v+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})}catch{return v}}
+function bullet(items){return (items||[]).length?items.map((x,i)=>`${i+1}. ${x}`).join('\n'):'- Tidak ada data yang teridentifikasi.'}
+function actionRows(items){return (items||[]).length?items.map((x,i)=>`${i+1}. ${x.task}\n   PIC: ${x.owner||'Tidak disebutkan'}\n   Deadline: ${x.deadline||'Tidak disebutkan'}\n   Prioritas: ${x.priority||'Unknown'}`).join('\n'):'- Tidak ada action item yang teridentifikasi.'}
+function generateDocument(type){
+const m=getCurrentMeetingForDocuments(),a=normalizeAnalysis(m.analysis)||{summary:'',sentiment:'',sentimentReason:'',keyPoints:[],decisions:[],actionItems:[],risks:[],questions:[],topics:[],speakers:[],effectiveness:{score:0,strengths:[],gaps:[],recommendation:''}};
+const head=`Judul/Agenda: ${m.title}\nTanggal: ${fmtDate(m.date)}\nWaktu: ${m.time||'-'}\nTempat: ${m.location||'-'}\nUnit/Instansi: ${m.unit||'-'}\nPeserta: ${m.participants||'-'}\n`;
+let out='';let label='';
+if(type==='officialReport'){label='Laporan Dinas';out=`LAPORAN KEGIATAN\n\n${head}\nI. KEGIATAN\n${m.title}\n\nII. TEMPAT DAN WAKTU\n1. Hari/Tanggal: ${fmtDate(m.date)}\n2. Waktu: ${m.time||'-'}\n3. Tempat: ${m.location||'-'}\n4. Peserta: ${m.participants||'-'}\n\nIII. TUJUAN KEGIATAN\n${a.summary||'Tujuan kegiatan belum teridentifikasi secara eksplisit dari hasil analisis.'}\n\nIV. URAIAN KEGIATAN\n${bullet(a.keyPoints)}\n\nV. HASIL KEGIATAN\n${bullet(a.decisions)}\n\nVI. TINDAK LANJUT\n${actionRows(a.actionItems)}\n\nVII. RISIKO / ISU\n${bullet(a.risks)}\n\nVIII. KESIMPULAN\n${a.effectiveness.recommendation||a.summary||'Kesimpulan belum tersedia.'}\n\nDemikian laporan ini dibuat untuk dipergunakan sebagaimana mestinya.`}
+else if(type==='minutes'){label='Notulen';out=`NOTULEN RAPAT\n\n${head}\n1. Ringkasan Eksekutif\n${a.summary||'-'}\n\n2. Pokok Pembahasan\n${bullet(a.keyPoints)}\n\n3. Keputusan\n${bullet(a.decisions)}\n\n4. Action Items\n${actionRows(a.actionItems)}\n\n5. Risiko / Isu\n${bullet(a.risks)}\n\n6. Pertanyaan Terbuka\n${bullet(a.questions)}`}
+else if(type==='beritaAcara'){label='Berita Acara';out=`BERITA ACARA KEGIATAN\n\nPada ${fmtDate(m.date)}, pukul ${m.time||'-'}, bertempat di ${m.location||'-'}, telah dilaksanakan kegiatan ${m.title}.\n\nPeserta:\n${m.participants||'-'}\n\nPokok hasil kegiatan:\n${bullet(a.decisions.length?a.decisions:a.keyPoints)}\n\nTindak lanjut:\n${actionRows(a.actionItems)}\n\nBerita acara ini disusun berdasarkan data rapat dan hasil analisis AI yang tersedia.`}
+else if(type==='executiveBrief'){label='Executive Brief';out=`EXECUTIVE BRIEF\n\n${head}\nRINGKASAN\n${a.summary||'-'}\n\nKEPUTUSAN KUNCI\n${bullet(a.decisions)}\n\nPRIORITAS TINDAK LANJUT\n${actionRows(a.actionItems.filter(x=>x.priority==='High').length?a.actionItems.filter(x=>x.priority==='High'):a.actionItems.slice(0,5))}\n\nRISIKO UTAMA\n${bullet(a.risks.slice(0,5))}\n\nEFEKTIVITAS RAPAT\nSkor: ${a.effectiveness.score||0}%\nRekomendasi: ${a.effectiveness.recommendation||'-'}`}
+else if(type==='followUpMemo'){label='Memo Tindak Lanjut';out=`MEMO TINDAK LANJUT\n\nPerihal: Tindak lanjut ${m.title}\nTanggal: ${fmtDate(m.date)}\n\nDasar/Keputusan:\n${bullet(a.decisions)}\n\nInstruksi Tindak Lanjut:\n${actionRows(a.actionItems)}\n\nRisiko yang perlu dipantau:\n${bullet(a.risks)}\n\nCatatan:\n${a.effectiveness.recommendation||'-'}`}
+else if(type==='actionTracker'){label='Action Tracker';out=`ACTION TRACKER\n\nMeeting: ${m.title}\nTanggal: ${fmtDate(m.date)}\n\n${(a.actionItems||[]).length?a.actionItems.map((x,i)=>`${i+1}. TASK: ${x.task}\n   PIC: ${x.owner||'Tidak disebutkan'}\n   DEADLINE: ${x.deadline||'Tidak disebutkan'}\n   PRIORITAS: ${x.priority||'Unknown'}\n   STATUS: Belum dimulai`).join('\n\n'):'Belum ada action item yang teridentifikasi.'}`}
+$('generatedDocType').textContent=label;$('generatedDocumentContent').textContent=out;window.currentGeneratedDocument={type,label,content:out,title:m.title};switchTab('docsTab');showToast(label+' berhasil dibuat.','success');return out}
+function generateAllDocuments(){const types=['officialReport','minutes','beritaAcara','executiveBrief','followUpMemo','actionTracker'];types.forEach(t=>generateDocument(t));generateDocument('officialReport');showToast('Semua jenis dokumen siap diakses melalui tombol masing-masing.','success')}
+async function copyGeneratedDocument(){const text=$('generatedDocumentContent')?.textContent||'';if(!text||text.startsWith('Pilih jenis'))return showToast('Belum ada dokumen.','warning');await copyTextToClipboard(text,'Dokumen berhasil disalin.')}
+function exportGeneratedDocument(ext){const d=window.currentGeneratedDocument;if(!d)return showToast('Buat dokumen terlebih dahulu.','warning');const safe=sanitizeFilename(d.title||'Meeting');downloadFile(d.content,`${d.label.replace(/[^a-zA-Z0-9]+/g,'_')}_${safe}.${ext}`,ext==='md'?'text/markdown':'text/plain')}
+function continuityKey(item){return [String(item?.meetingId||''),crossText(item?.task||item?.decision||''),String(item?.index??'')].join('|')}
+function loadContinuityState(){try{const raw=safeGet('meeting_ai_continuity_state');if(raw){const p=JSON.parse(raw);if(p&&typeof p==='object')continuityState={version:1,actionStatus:p.actionStatus||{},decisionStatus:p.decisionStatus||{}}}}catch(e){console.warn('Continuity state load failed',e)}}
+function saveContinuityState(){safeSet('meeting_ai_continuity_state',JSON.stringify(continuityState))}
+function getActionStatus(x){return continuityState.actionStatus[continuityKey(x)]||'Open'}
+function getDecisionStatus(x){return continuityState.decisionStatus[continuityKey(x)]||'Pending'}
+function setActionStatus(key,status){continuityState.actionStatus[key]=status;saveContinuityState();renderContinuityTracker();showToast('Status action diperbarui: '+status,'success')}
+function setDecisionStatus(key,status){continuityState.decisionStatus[key]=status;saveContinuityState();renderContinuityTracker();showToast('Status keputusan diperbarui: '+status,'success')}
+function refreshContinuityTracker(){buildCrossMeetingIntelligence();renderContinuityTracker()}
+function renderContinuityTracker(){const actions=[],decisions=[];meetingHistory.map(normalizeRecord).filter(Boolean).forEach(m=>{const a=normalizeAnalysis(m.analysis)||{actionItems:[],decisions:[]};(a.actionItems||[]).forEach((x,index)=>actions.push({...x,meetingId:m.id,meetingTitle:m.title,meetingDate:m.date||m.timestamp||'',index}));(a.decisions||[]).forEach((d,index)=>decisions.push({decision:d,meetingId:m.id,meetingTitle:m.title,meetingDate:m.date||m.timestamp||'',index}))});const counts={Open:0,'In Progress':0,Blocked:0,Done:0};actions.forEach(x=>{const st=getActionStatus(x);counts[st]=(counts[st]||0)+1});$('contTotalActions').textContent=actions.length;$('contOpenActions').textContent=counts.Open;$('contProgressActions').textContent=counts['In Progress'];$('contBlockedActions').textContent=counts.Blocked;$('contDoneActions').textContent=counts.Done;const filter=$('continuityActionFilter')?.value||'all';const rank={Blocked:0,Open:1,'In Progress':2,Done:3};const visible=actions.filter(x=>filter==='all'||getActionStatus(x)===filter).sort((a,b)=>(rank[getActionStatus(a)]??9)-(rank[getActionStatus(b)]??9));$('continuityActionList').innerHTML=visible.length?visible.map(x=>{const k=continuityKey(x),st=getActionStatus(x);return `<div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><div class="flex justify-between gap-2"><div><p class="text-sm text-slate-200">${escapeHTML(x.task)}</p><p class="text-[11px] text-slate-500 mt-1">${escapeHTML(x.meetingTitle||'-')} · ${escapeHTML(x.meetingDate||'-')}</p><p class="text-[11px] text-slate-400 mt-1">PIC: ${escapeHTML(x.owner||'Tidak disebutkan')} · Deadline: ${escapeHTML(x.deadline||'Tidak disebutkan')} · Prioritas: ${escapeHTML(x.priority||'Unknown')}</p></div><select onchange="setActionStatus(${JSON.stringify(k)},this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] h-fit"><option ${st==='Open'?'selected':''}>Open</option><option ${st==='In Progress'?'selected':''}>In Progress</option><option ${st==='Blocked'?'selected':''}>Blocked</option><option ${st==='Done'?'selected':''}>Done</option></select></div></div>`}).join(''):'<p class="text-xs text-slate-500 text-center py-6">Tidak ada action item.</p>';$('continuityDecisionList').innerHTML=decisions.length?decisions.slice().reverse().map(x=>{const k=continuityKey(x),st=getDecisionStatus(x);return `<div class="bg-slate-950 border border-slate-800 rounded-xl p-3"><p class="text-sm text-slate-200">${escapeHTML(x.decision)}</p><p class="text-[11px] text-slate-500 mt-1">${escapeHTML(x.meetingTitle||'-')} · ${escapeHTML(x.meetingDate||'-')}</p><div class="flex justify-between items-center mt-2"><span class="text-[11px] text-slate-400">Status</span><select onchange="setDecisionStatus(${JSON.stringify(k)},this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px]"><option ${st==='Pending'?'selected':''}>Pending</option><option ${st==='Confirmed'?'selected':''}>Confirmed</option><option ${st==='Superseded'?'selected':''}>Superseded</option></select></div></div>`}).join(''):'<p class="text-xs text-slate-500 text-center py-6">Belum ada keputusan.</p>';const overdue=actions.filter(x=>getActionStatus(x)!=='Done'&&parseDeadline(x.deadline)&&parseDeadline(x.deadline)<new Date()).length;const pending=decisions.filter(x=>getDecisionStatus(x)==='Pending').length;$('continuityAlerts').innerHTML=[['⏰ Deadline Terlewat',overdue,'text-rose-400'],['🚧 Action Blocked',counts.Blocked,'text-amber-400'],['⚖️ Keputusan Pending',pending,'text-cyan-400']].map(a=>`<div class="bg-slate-950 border border-slate-800 rounded-xl p-4"><p class="text-xs text-slate-500">${a[0]}</p><b class="text-2xl ${a[2]}">${a[1]}</b><p class="text-[11px] text-slate-500 mt-1">Perlu perhatian.</p></div>`).join('')}
+function exportContinuityTracker(){const actions=[],decisions=[];meetingHistory.map(normalizeRecord).filter(Boolean).forEach(m=>{const a=normalizeAnalysis(m.analysis)||{actionItems:[],decisions:[]};(a.actionItems||[]).forEach((x,index)=>actions.push({...x,meetingId:m.id,meetingTitle:m.title,status:getActionStatus({...x,meetingId:m.id,index}),index}));(a.decisions||[]).forEach((d,index)=>decisions.push({decision:d,meetingId:m.id,meetingTitle:m.title,status:getDecisionStatus({decision:d,meetingId:m.id,index}),index}))});download(JSON.stringify({version:1,generatedAt:new Date().toISOString(),actions,decisions},null,2),`Meeting_Continuity_Tracker_${new Date().toISOString().slice(0,10)}.json`,'application/json')}
+
+function documentStorageKey(){return 'meeting_ai_document_history'}
+function loadDocumentHistory(){try{return JSON.parse(safeGet(documentStorageKey())||'[]')||[]}catch{return []}}
+function saveDocumentHistory(list){safeSet(documentStorageKey(),JSON.stringify(list.slice(0,30)));renderDocumentHistory()}
+function renderDocumentHistory(){const c=$('documentHistoryList');if(!c)return;const list=loadDocumentHistory();c.innerHTML=list.length?list.map((d,i)=>`<button onclick="restoreGeneratedDocument(${i})" class="w-full text-left border border-slate-800 bg-slate-950 rounded-lg p-2.5 hover:border-indigo-500/50"><b class="text-xs text-slate-300">${escapeHTML(d.label||d.type)}</b><span class="block text-[10px] text-slate-500 mt-1">${escapeHTML(d.title||'Meeting')} · ${escapeHTML(d.createdAt||'')}</span></button>`).join(''):'<p class="text-xs text-slate-500">Belum ada dokumen yang dibuat.</p>'}
+function recordGeneratedDocument(d){const list=loadDocumentHistory();list.unshift({...d,content:String(d.content||'').slice(0,50000),createdAt:new Date().toLocaleString('id-ID')});saveDocumentHistory(list)}
+function restoreGeneratedDocument(i){const d=loadDocumentHistory()[i];if(!d)return;window.currentGeneratedDocument=d;$('generatedDocType').value=d.type||'officialReport';$('generatedDocLabel').textContent=d.label||'Dokumen';$('generatedDocumentContent').textContent=d.content||'';$('documentTraceMeta').textContent=`Sumber: ${d.source||'meeting intelligence'} · ${d.createdAt||''}`;switchTab('docsTab');validateGeneratedDocument()}
+function validateGeneratedDocument(){const d=window.currentGeneratedDocument;const m=getCurrentMeetingForDocuments();const checks=[['Dokumen tersedia',!!d?.content],['Judul meeting tersedia',!!m.title],['Tanggal kegiatan tersedia',!!m.date],['Transkrip sumber tersedia',!!m.transcript],['Structured intelligence tersedia',!!m.analysis],['Tidak ada placeholder template',!(/\[[^\]]+\]/.test(d?.content||''))],['Panjang dokumen memadai',(d?.content||'').trim().length>=120]];const passed=checks.filter(x=>x[1]).length;$('documentValidation').innerHTML=checks.map(x=>`<div class="flex items-center justify-between gap-2"><span>${x[1]?'✅':'⚠️'} ${escapeHTML(x[0])}</span><b class="${x[1]?'text-emerald-400':'text-amber-400'}">${x[1]?'PASS':'CHECK'}</b></div>`).join('')+`<div class="border-t border-slate-800 mt-3 pt-3 text-slate-300">${passed}/${checks.length} pemeriksaan lulus.</div>`;return {passed,total:checks.length,ok:passed===checks.length,checks}}
+async function generateDocumentAI(type){const m=getCurrentMeetingForDocuments();const a=normalizeAnalysis(m.analysis);if(!a)throw Error('Jalankan Advanced Meeting Intelligence terlebih dahulu.');const base=generateDocument(type);if(!appSettings.apiKey.trim())return base;const prompt=`Anda adalah editor dokumen profesional. Ubah dokumen berikut menjadi versi ${type} yang formal, konsisten, faktual, dan siap digunakan. Jangan menambahkan fakta yang tidak ada. Pertahankan metadata dan keputusan/action/risiko yang bersumber dari intelligence. Hanya keluarkan dokumen final.\n\nDATA SUMBER:\n${JSON.stringify({title:m.title,date:m.date,time:m.time,location:m.location,unit:m.unit,participants:m.participants,analysis:a})}\n\nDRAFT:\n${base}`;const out=await callGemini(prompt);$('generatedDocumentContent').textContent=out;window.currentGeneratedDocument={type,label:$('generatedDocLabel').textContent,content:out,title:m.title,source:'AI Enhanced'};recordGeneratedDocument(window.currentGeneratedDocument);validateGeneratedDocument();return out}
+async function generateDocumentV4(type){const mode=$('documentGenerationMode')?.value||'deterministic';const out=generateDocument(type);if(mode==='ai'){try{await generateDocumentAI(type);showToast('Dokumen AI Enhanced berhasil dibuat.','success')}catch(e){showToast('AI Enhanced gagal; draft template tetap tersedia: '+e.message,'warning')}}else{recordGeneratedDocument(window.currentGeneratedDocument);validateGeneratedDocument()};return out}
+function initializePhase4(){renderDocumentHistory();const oldGenerate=window.generateDocument;window.generateDocumentV4=generateDocumentV4;window.generateDocument=generateDocumentV4;}
+
+function runRegressionSelfTest(){const tests=[];const c=(n,p,d='')=>tests.push({name:n,passed:!!p,detail:d});['meetingTitle','meetingDate','meetingTime','meetingLocation','unitKerja','meetingCategory','participants','transcriptInput','officialReportContent','historyListContainer','dashboardTab','dashTotalMeetings','dashAvgEffectiveness','dashTotalDecisions','dashTotalActions','dashSentiment','dashPriority','dashTopics','dashRisks','crossMeetingTab','crossMeetingCount','crossOpenActions','crossRecurringActions','crossRecurringRisks','crossPersistentTopics','crossActionAlerts','crossRiskAlerts','crossTopicContinuity','crossDecisionContinuity','crossTimeline','knowledgeGraphTab','graphNodeCount','graphEdgeCount','graphPeopleCount','graphMeetingCount','graphTopicCount','graphRiskCount','knowledgeGraphCanvas','graphInspector','docsTab','generatedDocType','generatedDocumentContent','documentValidation','documentHistoryList'].forEach(id=>c('DOM:'+id,!!$(id)));['runAITask','renderDashboard','loadHistoryItem','deleteHistoryItem','clearHistory','exportAsText','exportAsMarkdown','switchTab','saveSettings','generateDocument','generateAllDocuments','copyGeneratedDocument','exportGeneratedDocument','buildKnowledgeBase','loadKnowledgeBase','searchKnowledgeBase','buildKnowledgeGraph','renderKnowledgeGraph','exportKnowledgeGraph','showKBRelated','exportKnowledgeBase','importKnowledgeBase','generateDocumentV4','validateGeneratedDocument','generateDocumentAI','buildCrossMeetingIntelligence','loadCrossMeetingIntelligence','renderCrossMeetingIntelligence','exportCrossMeetingIntelligence'].forEach(n=>c('FN:'+n,typeof window[n]==='function'));const e=escapeHTML('<scr'+'ipt>x</scr'+'ipt>');c('Security:escapeHTML',!e.includes('<script>'));c('Export:sanitizeFilename',!/[\\/:*?"<>|]/.test(sanitizeFilename('Rapat / Final: 2026?.txt')));const n=normalizeAnalysis({summary:'x',actionItems:[{task:''},'valid']});c('AI:normalize',n.actionItems.length===1);const legacy=normalizeRecord({id:1,title:'Legacy',rawAI:'x'});c('Compatibility:legacy',legacy&&legacy.rawAI==='x'&&Array.isArray(legacy.analysis.actionItems));const report={version:document.querySelector('meta[name=application-version]').content,passed:tests.filter(x=>x.passed).length,failed:tests.filter(x=>!x.passed).length,total:tests.length,ok:tests.every(x=>x.passed),timestamp:new Date().toISOString(),results:tests};console.table(tests);console.log(report);return report}window.runRegressionSelfTest=runRegressionSelfTest;
+let knowledgeBase = {version:1,generatedAt:null,records:[],entities:{decisions:[],actions:[],risks:[],topics:[]}};
+function normalizeKBText(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
+function buildKnowledgeBase(){
+  const records=meetingHistory.map(normalizeRecord).filter(Boolean);
+  const decisions=[],actions=[],risks=[],topics=[],topicMap=new Map(),riskMap=new Map();
+  records.forEach(m=>{const a=normalizeAnalysis(m.analysis)||{decisions:[],actionItems:[],risks:[],topics:[]};
+    a.decisions.forEach((text,i)=>decisions.push({id:`d-${m.id}-${i}`,meetingId:m.id,meetingTitle:m.title,text:String(text)}));
+    a.actionItems.forEach((x,i)=>actions.push({id:`a-${m.id}-${i}`,meetingId:m.id,meetingTitle:m.title,...x}));
+    a.risks.forEach((text,i)=>{const key=normalizeKBText(text);risks.push({id:`r-${m.id}-${i}`,meetingId:m.id,meetingTitle:m.title,text:String(text)});if(key){const z=riskMap.get(key)||{text:String(text),count:0,meetings:[]};z.count++;z.meetings.push(m.id);riskMap.set(key,z)}});
+    a.topics.forEach((text,i)=>{const key=normalizeKBText(text);topics.push({id:`t-${m.id}-${i}`,meetingId:m.id,meetingTitle:m.title,text:String(text)});if(key){const z=topicMap.get(key)||{text:String(text),count:0,meetings:[]};z.count++;z.meetings.push(m.id);topicMap.set(key,z)}});
+  });
+  knowledgeBase={version:1,generatedAt:new Date().toISOString(),records,entities:{decisions,actions,risks,topics},topicMap:[...topicMap.values()].sort((a,b)=>b.count-a.count),riskMap:[...riskMap.values()].sort((a,b)=>b.count-a.count)};
+  safeStorageSet('meeting_ai_knowledge_base',JSON.stringify(knowledgeBase));renderKnowledgeBase();showToast('Knowledge Base berhasil dibangun.','success');return knowledgeBase;
+}
+function loadKnowledgeBase(){try{const raw=safeStorageGet('meeting_ai_knowledge_base');if(raw)knowledgeBase=JSON.parse(raw)||knowledgeBase}catch(e){console.warn('KB load failed',e)}renderKnowledgeBase()}
+function renderKnowledgeBase(){const kb=knowledgeBase||{};const r=kb.records||[];const e=kb.entities||{};$('kbMeetings').textContent=r.length;$('kbDecisions').textContent=(e.decisions||[]).length;$('kbActions').textContent=(e.actions||[]).length;$('kbRisks').textContent=(e.risks||[]).length;$('kbTopics').textContent=(e.topics||[]).length;$('kbTopTopics').innerHTML=(kb.topicMap||[]).slice(0,20).map(x=>`<span class="px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs">${escapeHTML(x.text)} · ${x.count}</span>`).join('')||'<span class="text-xs text-slate-500">Belum ada topik.</span>';$('kbRecurringRisks').innerHTML=(kb.riskMap||[]).filter(x=>x.count>1).slice(0,10).map(x=>`<div class="border border-rose-900/40 rounded-lg p-2.5"><p class="text-xs text-slate-300">${escapeHTML(x.text)}</p><p class="text-[11px] text-rose-300 mt-1">Muncul ${x.count} kali</p></div>`).join('')||'<p class="text-xs text-slate-500">Belum ada risiko berulang.</p>';searchKnowledgeBase()}
+function searchKnowledgeBase(){const q=normalizeKBText($('kbSearchInput')?.value||'');const type=$('kbSearchType')?.value||'all';const out=[];const add=(kind,x,text)=>{if(!q||normalizeKBText(text).includes(q))out.push({kind,...x,text})};const e=knowledgeBase.entities||{};if(type==='all'||type==='meeting')(knowledgeBase.records||[]).forEach(m=>add('meeting',m,`${m.title} ${m.unit} ${m.location} ${m.transcript}`));if(type==='all'||type==='decision')(e.decisions||[]).forEach(x=>add('decision',x,x.text));if(type==='all'||type==='action')(e.actions||[]).forEach(x=>add('action',x,`${x.task} ${x.owner} ${x.deadline}`));if(type==='all'||type==='risk')(e.risks||[]).forEach(x=>add('risk',x,x.text));if(type==='all'||type==='topic')(e.topics||[]).forEach(x=>add('topic',x,x.text));const list=out.slice(0,40);$('kbSearchResults').innerHTML=list.map(x=>`<button onclick="showKBRelated(${Number(x.meetingId||x.id)})" class="w-full text-left border border-slate-800 hover:border-indigo-600 bg-slate-900 rounded-lg p-3 transition"><div class="flex justify-between gap-2"><span class="text-[10px] uppercase text-indigo-400">${x.kind}</span><span class="text-[10px] text-slate-500">${escapeHTML(x.meetingTitle||x.title||'')}</span></div><p class="text-xs text-slate-300 mt-1">${escapeHTML(x.text||x.task||x.title||'')}</p></button>`).join('')||'<p class="text-xs text-slate-500">Tidak ada hasil.</p>'}
+function showKBRelated(meetingId){const m=(knowledgeBase.records||[]).find(x=>Number(x.id)===Number(meetingId));if(!m)return;const a=normalizeAnalysis(m.analysis)||{topics:[],decisions:[],actionItems:[]};const related=(knowledgeBase.records||[]).filter(x=>Number(x.id)!==Number(m.id)).map(x=>{const b=normalizeAnalysis(x.analysis)||{topics:[],decisions:[],actionItems:[]};const A=new Set(a.topics.map(normalizeKBText));const B=new Set(b.topics.map(normalizeKBText));const score=[...A].filter(v=>v&&B.has(v)).length;return{x,score}}).filter(v=>v.score>0).sort((a,b)=>b.score-a.score).slice(0,8);$('kbRelatedMeetings').innerHTML=`<div class="border border-indigo-500/20 bg-indigo-500/5 rounded-lg p-3 mb-2"><b class="text-sm">${escapeHTML(m.title)}</b><p class="text-xs text-slate-500 mt-1">${escapeHTML(m.date||m.timestamp||'-')}</p></div>`+(related.map(v=>`<button onclick="loadHistoryItem(${Number(v.x.id)})" class="w-full text-left border border-slate-800 bg-slate-900 hover:border-indigo-600 rounded-lg p-2.5"><p class="text-xs text-slate-300">${escapeHTML(v.x.title)}</p><p class="text-[11px] text-indigo-400 mt-1">${v.score} topik terkait</p></button>`).join('')||'<p class="text-xs text-slate-500">Belum ditemukan meeting terkait.</p>')}
+function exportKnowledgeBase(){buildKnowledgeBase();const payload=JSON.stringify(knowledgeBase,null,2);download(payload,`Meeting_Intelligence_KnowledgeBase_${new Date().toISOString().slice(0,10)}.json`,'application/json')}
+function importKnowledgeBase(event){const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(String(reader.result||''));if(!data||!Array.isArray(data.records)||!data.entities)throw Error('Format Knowledge Base tidak valid.');knowledgeBase=data;safeStorageSet('meeting_ai_knowledge_base',JSON.stringify(knowledgeBase));meetingHistory=data.records.map(normalizeRecord).filter(Boolean);safeStorageSet('meeting_ai_history',JSON.stringify(meetingHistory));renderHistory();renderDashboard();renderKnowledgeBase();showToast('Knowledge Base berhasil diimport.','success')}catch(e){showToast('Import gagal: '+e.message,'error')}finally{event.target.value=''}};reader.readAsText(file)}
+
+let crossMeetingIntelligence={version:1,generatedAt:null,meetings:[],openActions:[],recurringActions:[],recurringRisks:[],persistentTopics:[],decisionContinuity:[],timeline:[]};
+let continuityState={version:1,actionStatus:{},decisionStatus:{}};
+function crossText(v){return String(v||'').toLowerCase().replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff\s]/gi,' ').replace(/\s+/g,' ').trim()}
+function crossTokens(v){return new Set(crossText(v).split(' ').filter(x=>x.length>2))}
+function similarity(a,b){const A=crossTokens(a),B=crossTokens(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>{if(B.has(x))n++});return n/Math.max(1,Math.min(A.size,B.size))}
+function parseDeadline(v){const s=String(v||'').trim();if(!s||/tidak disebutkan|unknown|selesai|secepatnya/i.test(s))return null;const iso=s.match(/\b(20\d{2})[-\/.](\d{1,2})[-\/.](\d{1,2})\b/);if(iso){const d=new Date(Number(iso[1]),Number(iso[2])-1,Number(iso[3]));return Number.isNaN(d.getTime())?null:d}const dmy=s.match(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/);if(dmy){const d=new Date(Number(dmy[3]),Number(dmy[2])-1,Number(dmy[1]));return Number.isNaN(d.getTime())?null:d}return null}
+function recordDate(m){const raw=m.date||m.timestamp||'';const d=new Date(raw);return Number.isNaN(d.getTime())?new Date(0):d}
+function buildCrossMeetingIntelligence(){const records=meetingHistory.map(normalizeRecord).filter(Boolean).sort((a,b)=>recordDate(a)-recordDate(b));const openActions=[],actionMap=new Map(),riskMap=new Map(),topicMap=new Map(),decisionPairs=[];records.forEach((m,mi)=>{const a=normalizeAnalysis(m.analysis)||{decisions:[],actionItems:[],risks:[],topics:[]};a.actionItems.forEach((x,i)=>{const item={...x,meetingId:m.id,meetingTitle:m.title,meetingDate:m.date||m.timestamp||'',index:i};const key=crossText(x.task);if(key){const z=actionMap.get(key)||{task:x.task,occurrences:[]};z.occurrences.push(item);actionMap.set(key,z)}openActions.push(item)});a.risks.forEach((x,i)=>{const key=crossText(x);if(key){const z=riskMap.get(key)||{text:x,meetings:[]};z.meetings.push({id:m.id,title:m.title,date:m.date||m.timestamp||''});riskMap.set(key,z)}});a.topics.forEach((x,i)=>{const key=crossText(x);if(key){const z=topicMap.get(key)||{text:x,meetings:[]};z.meetings.push({id:m.id,title:m.title,date:m.date||m.timestamp||''});topicMap.set(key,z)}});a.decisions.forEach((d,i)=>{records.slice(mi+1).forEach(later=>{const b=normalizeAnalysis(later.analysis)||{decisions:[]};b.decisions.forEach(ld=>{const score=similarity(d,ld);if(score>=0.55)decisionPairs.push({fromMeetingId:m.id,fromTitle:m.title,fromDecision:d,toMeetingId:later.id,toTitle:later.title,toDecision:ld,score:Math.round(score*100)})})})})});const recurringActions=[...actionMap.values()].filter(x=>x.occurrences.length>1).sort((a,b)=>b.occurrences.length-a.occurrences.length);const recurringRisks=[...riskMap.values()].filter(x=>x.meetings.length>1).sort((a,b)=>b.meetings.length-a.meetings.length);const persistentTopics=[...topicMap.values()].filter(x=>x.meetings.length>1).sort((a,b)=>b.meetings.length-a.meetings.length);const now=new Date();const attention=openActions.map(x=>{const d=parseDeadline(x.deadline);let status='Terbuka';if(d&&d<now)status='Lewat deadline';else if(d&&d-now<7*86400000)status='Deadline dekat';return{...x,status}}).filter(x=>x.status!=='Terbuka'||x.priority==='High').sort((a,b)=>(a.status==='Lewat deadline'?-2:a.status==='Deadline dekat'?-1:0)-(b.status==='Lewat deadline'?-2:b.status==='Deadline dekat'?-1:0));crossMeetingIntelligence={version:1,generatedAt:new Date().toISOString(),meetings:records.map(x=>({id:x.id,title:x.title,date:x.date,timestamp:x.timestamp})),openActions:attention,recurringActions,recurringRisks,persistentTopics,decisionContinuity:decisionPairs,timeline:records.map(m=>{const a=normalizeAnalysis(m.analysis)||{decisions:[],actionItems:[],risks:[],topics:[]};return{id:m.id,title:m.title,date:m.date||m.timestamp||'',decisions:a.decisions.length,actions:a.actionItems.length,risks:a.risks.length,topics:a.topics.length,effectiveness:Number(a.effectiveness?.score||0)}})};safeSet('meeting_ai_cross_meeting',JSON.stringify(crossMeetingIntelligence));renderCrossMeetingIntelligence();showToast('Cross-Meeting Intelligence berhasil diperbarui.','success');return crossMeetingIntelligence}
+function loadCrossMeetingIntelligence(){try{const raw=safeGet('meeting_ai_cross_meeting');if(raw)crossMeetingIntelligence=JSON.parse(raw)||crossMeetingIntelligence}catch(e){console.warn('Cross-meeting load failed',e)}renderCrossMeetingIntelligence()}
+function renderCrossMeetingIntelligence(){const c=crossMeetingIntelligence||{};$('crossMeetingCount').textContent=(c.meetings||[]).length;$('crossOpenActions').textContent=(c.openActions||[]).length;$('crossRecurringActions').textContent=(c.recurringActions||[]).length;$('crossRecurringRisks').textContent=(c.recurringRisks||[]).length;$('crossPersistentTopics').textContent=(c.persistentTopics||[]).length;const actionHTML=(c.openActions||[]).slice(0,12).map(x=>`<button onclick="loadHistoryItem(${Number(x.meetingId)})" class="w-full text-left border border-slate-800 bg-slate-950 hover:border-indigo-600 rounded-lg p-3"><div class="flex justify-between gap-2"><b class="text-xs text-slate-200">${escapeHTML(x.task)}</b><span class="text-[10px] ${x.status==='Lewat deadline'?'text-rose-400':'text-amber-400'}">${escapeHTML(x.status)}</span></div><p class="text-[11px] text-slate-500 mt-1">${escapeHTML(x.meetingTitle)} · PIC: ${escapeHTML(x.owner)} · ${escapeHTML(x.deadline)}</p></button>`).join('');$('crossActionAlerts').innerHTML=actionHTML||'<p class="text-xs text-slate-500">Tidak ada action item yang memerlukan perhatian khusus.</p>';$('crossRiskAlerts').innerHTML=(c.recurringRisks||[]).slice(0,10).map(x=>`<div class="border border-rose-900/40 rounded-lg p-3"><p class="text-xs text-slate-300">${escapeHTML(x.text)}</p><p class="text-[11px] text-rose-300 mt-1">Muncul di ${x.meetings.length} rapat</p></div>`).join('')||'<p class="text-xs text-slate-500">Belum ada risiko berulang.</p>';$('crossTopicContinuity').innerHTML=(c.persistentTopics||[]).slice(0,12).map(x=>`<div class="border border-cyan-900/40 rounded-lg p-3"><p class="text-xs text-slate-300">${escapeHTML(x.text)}</p><p class="text-[11px] text-cyan-300 mt-1">Muncul di ${x.meetings.length} rapat: ${escapeHTML(x.meetings.map(m=>m.title).join(' → '))}</p></div>`).join('')||'<p class="text-xs text-slate-500">Belum ditemukan topik berkelanjutan.</p>';$('crossDecisionContinuity').innerHTML=(c.decisionContinuity||[]).slice(0,12).map(x=>`<div class="border border-indigo-900/40 rounded-lg p-3"><p class="text-xs text-slate-400">${escapeHTML(x.fromTitle)}</p><p class="text-xs text-slate-200 mt-1">“${escapeHTML(x.fromDecision)}”</p><p class="text-[11px] text-indigo-300 mt-1">Kemiripan ${x.score}% dengan keputusan di ${escapeHTML(x.toTitle)}: “${escapeHTML(x.toDecision)}”</p></div>`).join('')||'<p class="text-xs text-slate-500">Belum ditemukan kesinambungan keputusan.</p>';$('crossTimeline').innerHTML=(c.timeline||[]).slice(-15).reverse().map(x=>`<button onclick="loadHistoryItem(${Number(x.id)})" class="w-full text-left border border-slate-800 bg-slate-950 hover:border-indigo-600 rounded-lg p-3"><div class="flex justify-between gap-2"><b class="text-xs text-slate-200">${escapeHTML(x.title)}</b><span class="text-[10px] text-slate-500">${escapeHTML(x.date||'-')}</span></div><p class="text-[11px] text-slate-500 mt-1">Keputusan ${x.decisions} · Action ${x.actions} · Risiko ${x.risks} · Topik ${x.topics} · Efektivitas ${x.effectiveness}%</p></button>`).join('')||'<p class="text-xs text-slate-500">Belum ada timeline.</p>'}
+let knowledgeGraph={version:1,generatedAt:null,nodes:[],edges:[]};
+function graphNorm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff\s]/gi,' ').replace(/\s+/g,' ').trim()}
+function graphId(type,text){return `${type}:${graphNorm(text).slice(0,120)}` }
+function addGraphNode(map,nodes,type,label,meta={}){const id=graphId(type,label);if(!map.has(id)){const n={id,type,label:String(label||'').trim()||'Tanpa nama',...meta};map.set(id,n);nodes.push(n)}return id}
+function addGraphEdge(edges,a,b,type,meta={}){if(!a||!b||a===b)return;const key=`${a}|${b}|${type}`;if(!edges.some(e=>e.key===key))edges.push({key,source:a,target:b,type,...meta})}
+function buildKnowledgeGraph(){const records=meetingHistory.map(normalizeRecord).filter(Boolean);const nodes=[],edges=[],map=new Map();records.forEach(m=>{const mid=addGraphNode(map,nodes,'meeting',m.title,{meetingId:m.id,date:m.date});const participants=String(m.participants||'').split(',').map(x=>x.trim()).filter(Boolean);participants.forEach(person=>addGraphEdge(edges,addGraphNode(map,nodes,'person',person),mid,'attended'));const a=normalizeAnalysis(m.analysis)||{decisions:[],actionItems:[],risks:[],topics:[]};(a.decisions||[]).forEach((d,i)=>{const did=addGraphNode(map,nodes,'decision',d,{meetingId:m.id,index:i});addGraphEdge(edges,mid,did,'decided')});(a.actionItems||[]).forEach((x,i)=>{const aid=addGraphNode(map,nodes,'action',x.task||`Action ${i+1}`,{meetingId:m.id,index:i,owner:x.owner,deadline:x.deadline,priority:x.priority});addGraphEdge(edges,mid,aid,'assigned');if(x.owner&&graphNorm(x.owner)!=='tidak disebutkan')addGraphEdge(edges,addGraphNode(map,nodes,'person',x.owner),aid,'owns')});(a.risks||[]).forEach((r,i)=>{const rid=addGraphNode(map,nodes,'risk',r,{meetingId:m.id,index:i});addGraphEdge(edges,mid,rid,'has-risk')});(a.topics||[]).forEach((t,i)=>{const tid=addGraphNode(map,nodes,'topic',t,{meetingId:m.id,index:i});addGraphEdge(edges,mid,tid,'discussed')})});
+// Cross-meeting topic continuity
+const topicNodes=nodes.filter(n=>n.type==='topic');topicNodes.forEach((a,i)=>topicNodes.slice(i+1).forEach(b=>{if(graphNorm(a.label)===graphNorm(b.label))addGraphEdge(edges,a.id,b.id,'continues')}));
+knowledgeGraph={version:1,generatedAt:new Date().toISOString(),nodes,edges};safeStorageSet('meeting_ai_knowledge_graph',JSON.stringify(knowledgeGraph));renderKnowledgeGraph();renderKnowledgeGraphInspector();showToast(`Knowledge Graph dibangun: ${nodes.length} nodes, ${edges.length} edges.`,'success');return knowledgeGraph}
+function loadKnowledgeGraph(){try{const raw=safeStorageGet('meeting_ai_knowledge_graph');if(raw)knowledgeGraph=JSON.parse(raw)||knowledgeGraph}catch(e){console.warn('Graph load failed',e)}}
+function renderKnowledgeGraph(){const g=knowledgeGraph||{nodes:[],edges:[]};const filter=$('graphNodeFilter')?.value||'all';const nodes=filter==='all'?g.nodes:g.nodes.filter(n=>n.type===filter);const allowed=new Set(nodes.map(n=>n.id));const edges=(g.edges||[]).filter(e=>allowed.has(e.source)&&allowed.has(e.target));$('graphNodeCount').textContent=g.nodes.length;$('graphEdgeCount').textContent=g.edges.length;$('graphPeopleCount').textContent=g.nodes.filter(n=>n.type==='person').length;$('graphMeetingCount').textContent=g.nodes.filter(n=>n.type==='meeting').length;$('graphTopicCount').textContent=g.nodes.filter(n=>n.type==='topic').length;$('graphRiskCount').textContent=g.nodes.filter(n=>n.type==='risk').length;const w=900,h=Math.max(520,Math.ceil(Math.max(1,nodes.length)/4)*125);const pos={};nodes.forEach((n,i)=>{const col=i%4,row=Math.floor(i/4);pos[n.id]={x:100+col*220,y:65+row*115}});const esc=escapeHTML;const line=edges.map(e=>{const a=pos[e.source],b=pos[e.target];return a&&b?`<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="currentColor" opacity=".25" stroke-width="2"/>`:''}).join('');const cls={person:'fill-amber-400',meeting:'fill-indigo-400',decision:'fill-cyan-400',action:'fill-emerald-400',risk:'fill-rose-400',topic:'fill-violet-400'};const circles=nodes.map(n=>{const p=pos[n.id];return `<g><circle cx="${p.x}" cy="${p.y}" r="28" class="${cls[n.type]||'fill-slate-400'} opacity-90"/><text x="${p.x}" y="${p.y+47}" text-anchor="middle" fill="currentColor" font-size="11">${esc(n.label.slice(0,28))}</text><text x="${p.x}" y="${p.y+4}" text-anchor="middle" fill="#0f172a" font-size="9" font-weight="700">${esc(n.type.toUpperCase().slice(0,8))}</text></g>`}).join('');$('knowledgeGraphCanvas').innerHTML=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" class="text-slate-300">${line}${circles}</svg>`}
+function renderKnowledgeGraphInspector(){const q=graphNorm($('graphSearchInput')?.value||'');const list=(knowledgeGraph.nodes||[]).filter(n=>!q||graphNorm(`${n.type} ${n.label} ${n.owner||''}`).includes(q)).slice(0,50);$('graphInspector').innerHTML=list.map(n=>{const rel=(knowledgeGraph.edges||[]).filter(e=>e.source===n.id||e.target===n.id);const ids=new Set(rel.map(e=>e.source===n.id?e.target:e.source));const names=[...ids].map(id=>(knowledgeGraph.nodes||[]).find(x=>x.id===id)?.label).filter(Boolean).slice(0,6);return `<div class="border border-slate-800 bg-slate-950 rounded-lg p-3"><div class="flex justify-between gap-2"><span class="text-[10px] uppercase text-indigo-400">${escapeHTML(n.type)}</span><span class="text-[10px] text-slate-500">${rel.length} relasi</span></div><p class="text-xs text-slate-200 mt-1">${escapeHTML(n.label)}</p>${names.length?`<p class="text-[11px] text-slate-500 mt-1">Terhubung: ${escapeHTML(names.join(' · '))}</p>`:''}</div>`}).join('')||'<p class="text-xs text-slate-500">Tidak ada node yang cocok.</p>'}
+function exportKnowledgeGraph(){if(!knowledgeGraph.generatedAt)buildKnowledgeGraph();download(JSON.stringify(knowledgeGraph,null,2),`Organizational_Knowledge_Graph_${new Date().toISOString().slice(0,10)}.json`,'application/json')}
+window.buildKnowledgeGraph=buildKnowledgeGraph;window.loadKnowledgeGraph=loadKnowledgeGraph;window.renderKnowledgeGraph=renderKnowledgeGraph;window.renderKnowledgeGraphInspector=renderKnowledgeGraphInspector;window.exportKnowledgeGraph=exportKnowledgeGraph;
+function exportCrossMeetingIntelligence(){if(!crossMeetingIntelligence.generatedAt)buildCrossMeetingIntelligence();download(JSON.stringify(crossMeetingIntelligence,null,2),`Cross_Meeting_Intelligence_${new Date().toISOString().slice(0,10)}.json`,'application/json')}
+window.buildCrossMeetingIntelligence=buildCrossMeetingIntelligence;window.loadCrossMeetingIntelligence=loadCrossMeetingIntelligence;window.renderCrossMeetingIntelligence=renderCrossMeetingIntelligence;window.exportCrossMeetingIntelligence=exportCrossMeetingIntelligence;
+$('transcriptInput').addEventListener('input',updateCounts);$('audioFileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{showToast('Memproses audio...','info');const t=await transcribeUpload(f);$('transcriptInput').value+=($('transcriptInput').value?'\n\n':'')+t;updateCounts();showToast('Transkripsi berhasil.','success')}catch(err){showToast(err.message,'error')}finally{e.target.value=''}});
+window.addEventListener('load',()=>{loadSettings();loadHistory();loadKnowledgeBase();loadCrossMeetingIntelligence();loadContinuityState();loadKnowledgeGraph();initSpeechRecognition();const n=new Date(),d=new Date(n.getTime()-n.getTimezoneOffset()*60000);$('meetingDate').value=d.toISOString().slice(0,10);$('meetingTime').value=d.toISOString().slice(11,16);updateCounts();updateApiBadge();initializePhase4()});
+
+/* PHASE 4.1 — Configurable Document Template Engine */
+const DOCUMENT_TEMPLATE_STORAGE_KEY='meeting_ai_document_templates_v41';
+const DOCUMENT_TEMPLATE_STATE_KEY='meeting_ai_document_template_state_v41';
+const BUILTIN_DOCUMENT_TEMPLATES={
+ officialReport:{name:'Laporan Dinas — Atensi Pimpinan',version:'1.0.0',body:`LAPORAN ATENSI PIMPINAN
+
+I. KEGIATAN
+{{meeting.title}}
+
+II. TEMPAT DAN WAKTU
+1. Hari/Tanggal: {{meeting.date}}
+2. Waktu: {{meeting.time}}
+3. Tempat: {{meeting.location}}
+4. Peserta: {{meeting.participants}}
+
+III. TUJUAN KEGIATAN
+{{analysis.summary}}
+
+IV. URAIAN KEGIATAN
+{{analysis.keyPoints}}
+
+V. HASIL KEGIATAN / KEPUTUSAN
+{{analysis.decisions}}
+
+VI. TINDAK LANJUT
+{{analysis.actionItems}}
+
+VII. RISIKO / ISU
+{{analysis.risks}}
+
+VIII. KESIMPULAN
+{{analysis.summary}}
+
+Sumber: {{meta.sourceId}}
+Dibuat: {{meta.generatedAt}}`},
+ minutes:{name:'Notulen Rapat',version:'1.0.0',body:`NOTULEN RAPAT
+
+Judul: {{meeting.title}}
+Tanggal: {{meeting.date}}
+Waktu: {{meeting.time}}
+Tempat: {{meeting.location}}
+Unit: {{meeting.unit}}
+Peserta: {{meeting.participants}}
+
+RINGKASAN
+{{analysis.summary}}
+
+POIN PEMBAHASAN
+{{analysis.keyPoints}}
+
+KEPUTUSAN
+{{analysis.decisions}}
+
+TINDAK LANJUT
+{{analysis.actionItems}}
+
+RISIKO / ISU
+{{analysis.risks}}
+
+PERTANYAAN TERBUKA
+{{analysis.questions}}
+
+TOPIK
+{{analysis.topics}}
+
+Sumber: {{meta.sourceId}}
+Versi template: {{meta.templateVersion}}`},
+ executiveBrief:{name:'Executive Brief',version:'1.0.0',body:`EXECUTIVE BRIEF
+
+{{meeting.title}}
+{{meeting.date}} | {{meeting.location}}
+
+EXECUTIVE SUMMARY
+{{analysis.summary}}
+
+KEPUTUSAN
+{{analysis.decisions}}
+
+ACTION ITEMS
+{{analysis.actionItems}}
+
+RISIKO
+{{analysis.risks}}
+
+TOPIK
+{{analysis.topics}}
+
+Sentimen: {{analysis.sentiment}}
+Sumber: {{meta.sourceId}}`},
+ followUpMemo:{name:'Memo Tindak Lanjut',version:'1.0.0',body:`MEMO TINDAK LANJUT
+
+Perihal: {{meeting.title}}
+Unit: {{meeting.unit}}
+Tanggal: {{meeting.date}}
+
+RINGKASAN
+{{analysis.summary}}
+
+KEPUTUSAN
+{{analysis.decisions}}
+
+TINDAK LANJUT
+{{analysis.actionItems}}
+
+RISIKO / ISU
+{{analysis.risks}}
+
+Sumber: {{meta.sourceId}}`}
+};
+let documentTemplatesV41={},activeDocumentTemplateV41='officialReport';
+function getDocumentTemplatesV41(){try{const r=safeStorageGet(DOCUMENT_TEMPLATE_STORAGE_KEY);if(r){const x=JSON.parse(r);if(x&&typeof x==='object')return x}}catch(e){console.warn('Template store invalid',e)}return{}}
+function persistDocumentTemplatesV41(){safeStorageSet(DOCUMENT_TEMPLATE_STORAGE_KEY,JSON.stringify(documentTemplatesV41))}
+function initDocumentTemplateEngineV41(){
+ documentTemplatesV41=getDocumentTemplatesV41();
+ Object.entries(BUILTIN_DOCUMENT_TEMPLATES).forEach(([k,v])=>{if(!documentTemplatesV41[k])documentTemplatesV41[k]={...v,builtin:true}});
+ try{const x=JSON.parse(safeStorageGet(DOCUMENT_TEMPLATE_STATE_KEY)||'null');activeDocumentTemplateV41=x?.active||'officialReport'}catch{activeDocumentTemplateV41='officialReport'}
+ if(!documentTemplatesV41[activeDocumentTemplateV41])activeDocumentTemplateV41='officialReport';
+ persistDocumentTemplatesV41();populateDocumentTemplateSelect();loadDocumentTemplateToEditor();
+}
+function populateDocumentTemplateSelect(){
+ const el=document.getElementById('docTemplateSelect');if(!el)return;
+ el.innerHTML=Object.entries(documentTemplatesV41).map(([k,v])=>`<option value="${escapeHTML(k)}">${escapeHTML(v.name||k)} · v${escapeHTML(v.version||'1.0.0')}</option>`).join('');
+ el.value=activeDocumentTemplateV41;
+}
+function loadDocumentTemplateToEditor(){
+ const sel=document.getElementById('docTemplateSelect');if(!sel)return;
+ const k=sel.value||activeDocumentTemplateV41,t=documentTemplatesV41[k];if(!t)return;
+ activeDocumentTemplateV41=k;
+ document.getElementById('docTemplateName').value=t.name||k;
+ document.getElementById('docTemplateVersion').value=t.version||'1.0.0';
+ document.getElementById('docTemplateEditor').value=t.body||'';
+ safeStorageSet(DOCUMENT_TEMPLATE_STATE_KEY,JSON.stringify({active:k}));
+ renderDocumentSourceMapV41();
+}
+function saveDocumentTemplate(){
+ const sel=document.getElementById('docTemplateSelect'),k=sel?.value||activeDocumentTemplateV41;
+ const name=document.getElementById('docTemplateName').value.trim()||'Custom Template',version=document.getElementById('docTemplateVersion').value.trim()||'1.0.0',body=document.getElementById('docTemplateEditor').value;
+ if(!body.trim())return showToast('Isi template tidak boleh kosong.','error');
+ documentTemplatesV41[k]={name,version,body,builtin:Boolean(documentTemplatesV41[k]?.builtin),updatedAt:new Date().toISOString()};
+ activeDocumentTemplateV41=k;persistDocumentTemplatesV41();safeStorageSet(DOCUMENT_TEMPLATE_STATE_KEY,JSON.stringify({active:k}));populateDocumentTemplateSelect();showToast(`Template "${name}" v${version} disimpan.`,'success');
+ if(currentAnalysisResult)renderDocumentFromTemplateV41(k);
+}
+function duplicateDocumentTemplate(){
+ const t=documentTemplatesV41[activeDocumentTemplateV41];if(!t)return;
+ const k=`custom_${Date.now()}`;documentTemplatesV41[k]={name:`${t.name||'Template'} — Salinan`,version:'1.0.0',body:t.body||'',builtin:false,createdAt:new Date().toISOString()};
+ activeDocumentTemplateV41=k;persistDocumentTemplatesV41();populateDocumentTemplateSelect();loadDocumentTemplateToEditor();showToast('Template berhasil diduplikat.','success');
+}
+function resetDocumentTemplate(){
+ if(!confirm('Buat template custom baru dari format bawaan?'))return;
+ const type=document.getElementById('generatedDocType')?.value||'officialReport',t=BUILTIN_DOCUMENT_TEMPLATES[type]||BUILTIN_DOCUMENT_TEMPLATES.officialReport,k=`custom_${Date.now()}`;
+ documentTemplatesV41[k]={...t,name:`${t.name} — Custom`,builtin:false,version:'1.0.0'};activeDocumentTemplateV41=k;persistDocumentTemplatesV41();populateDocumentTemplateSelect();loadDocumentTemplateToEditor();showToast('Template custom dibuat.','success');
+}
+function getTemplateContextV41(){
+ const d=currentAnalysisResult||{},a=normalizeAnalysis(d.analysis||{});
+ return {meeting:{title:d.title||document.getElementById('meetingTitle')?.value||'Meeting tanpa judul',date:d.date||document.getElementById('meetingDate')?.value||'',time:d.time||document.getElementById('meetingTime')?.value||'',location:d.location||document.getElementById('meetingLocation')?.value||'',unit:d.unit||document.getElementById('unitKerja')?.value||'',category:d.category||document.getElementById('meetingCategory')?.value||'',participants:d.participants||document.getElementById('participants')?.value||'',duration:d.duration||document.getElementById('timerDisplay')?.textContent||'00:00'},analysis:a};
+}
+function formatTemplateValueV41(v,key){
+ if(!Array.isArray(v))return v==null?'':String(v);
+ if(!v.length)return 'Tidak ada data yang tercatat.';
+ if(key==='actionItems')return v.map((x,i)=>{const q=typeof x==='string'?{task:x}:x;return `${i+1}. ${q.task||'Tidak disebutkan'} | PIC: ${q.owner||'Tidak disebutkan'} | Deadline: ${q.deadline||'Tidak disebutkan'} | Prioritas: ${q.priority||'Unknown'}`}).join('\n');
+ return v.map((x,i)=>`${i+1}. ${typeof x==='string'?x:JSON.stringify(x)}`).join('\n');
+}
+function renderTemplateV41(body,ctx){
+ const unresolved=[];
+ const out=String(body||'').replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g,(_,path)=>{
+  const p=path.split('.');let v=ctx;for(const part of p){if(v==null)break;v=v[part]}
+  if(path.startsWith('analysis.'))v=formatTemplateValueV41(v,path.slice(9));
+  if(v==null||v===''){unresolved.push(path);return ''}return String(v);
+ });
+ return {rendered:out,unresolved:[...new Set(unresolved)]};
+}
+function renderDocumentFromTemplateV41(k=activeDocumentTemplateV41){
+ if(!currentAnalysisResult)return showToast('Belum ada hasil meeting yang dapat menjadi sumber dokumen.','warning');
+ const t=documentTemplatesV41[k];if(!t)return showToast('Template tidak ditemukan.','error');
+ const ctx=getTemplateContextV41();ctx.meta={generatedAt:new Date().toLocaleString('id-ID'),sourceId:String(currentAnalysisResult.id||'current-meeting'),templateVersion:t.version||'1.0.0'};
+ const r=renderTemplateV41(t.body,ctx),out=document.getElementById('generatedDocumentContent');
+ if(out)out.textContent=r.rendered;
+ if(document.getElementById('generatedDocLabel'))document.getElementById('generatedDocLabel').textContent=t.name||k;
+ if(document.getElementById('documentTraceMeta'))document.getElementById('documentTraceMeta').textContent=`Sumber: Meeting #${ctx.meta.sourceId} · Template: ${t.name||k} · v${t.version||'1.0.0'}`;
+ renderDocumentSourceMapV41(ctx,r.unresolved);validateTemplateOutputV41(r,ctx,t);return r.rendered;
+}
+function validateTemplateOutputV41(r,ctx,t){
+ const checks=[['Template tersedia',Boolean(t?.body?.trim()),'Template memiliki isi.'],['Meeting source tersedia',Boolean(ctx.meeting.title||ctx.meeting.date),'Metadata meeting tersedia.'],['Structured intelligence tersedia',Boolean(ctx.analysis?.summary||ctx.analysis?.keyPoints?.length||ctx.analysis?.decisions?.length),'Intelligence tersedia.'],['Tidak ada placeholder tertinggal',r.unresolved.length===0,r.unresolved.length?`Placeholder kosong: ${r.unresolved.join(', ')}`:'Semua placeholder terisi.'],['Output cukup panjang',r.rendered.trim().length>=80,`Panjang output ${r.rendered.trim().length} karakter.`]];
+ const box=document.getElementById('documentValidation');if(!box)return;
+ box.innerHTML=checks.map(x=>`<div class="flex gap-2 items-start"><span>${x[1]?'✅':'⚠️'}</span><div><b class="${x[1]?'text-emerald-400':'text-amber-400'}">${escapeHTML(x[0])}</b><div class="text-slate-500">${escapeHTML(x[2])}</div></div></div>`).join('');
+}
+function renderDocumentSourceMapV41(ctx=getTemplateContextV41(),unresolved=[]){
+ const b=document.getElementById('documentSourceMap');if(!b)return;
+ const rows=[['Meeting metadata',ctx.meeting.title?'available':'missing'],['Summary',ctx.analysis?.summary?'available':'empty'],['Decisions',`${ctx.analysis?.decisions?.length||0}`],['Actions',`${ctx.analysis?.actionItems?.length||0}`],['Risks',`${ctx.analysis?.risks?.length||0}`],['Unresolved placeholders',unresolved.length?unresolved.join(', '):'Tidak ada']];
+ b.innerHTML=rows.map(x=>`<div class="flex justify-between gap-3 py-1 border-b border-slate-800 last:border-0"><span>${escapeHTML(x[0])}</span><span class="text-slate-400">${escapeHTML(x[1])}</span></div>`).join('');
+}
+function exportTemplateDefinitionV41(){
+ const t=documentTemplatesV41[activeDocumentTemplateV41];if(!t)return showToast('Template aktif tidak ditemukan.','error');
+ downloadFile(JSON.stringify({schemaVersion:'4.1',exportedAt:new Date().toISOString(),key:activeDocumentTemplateV41,template:t},null,2),`Template_${sanitizeFilename(t.name||activeDocumentTemplateV41)}.json`,'application/json');
+}
+function runPhase41SelfTest(){
+ const r=[],c=(n,p,d='')=>r.push({name:n,passed:Boolean(p),detail:d});
+ c('Template store',Object.keys(documentTemplatesV41).length>=Object.keys(BUILTIN_DOCUMENT_TEMPLATES).length);
+ c('Active template',Boolean(documentTemplatesV41[activeDocumentTemplateV41]));
+ const x=renderTemplateV41('{{meeting.title}}\n{{analysis.summary}}\n{{analysis.actionItems}}\n{{meta.sourceId}}',{meeting:{title:'Test'},analysis:{summary:'Ringkasan',actionItems:[{task:'Tugas',owner:'A',deadline:'Besok',priority:'High'}]},meta:{sourceId:'123'}});
+ c('Placeholder rendering',x.rendered.includes('Test')&&x.rendered.includes('Ringkasan'));
+ c('Action formatting',x.rendered.includes('PIC: A'));
+ c('Unresolved detection',x.unresolved.length===0);
+ c('Sanitizer',typeof escapeHTML==='function'&&typeof sanitizeFilename==='function');
+ const report={phase:'4.1',timestamp:new Date().toISOString(),ok:r.every(x=>x.passed),results:r};console.groupCollapsed(`Phase 4.1 Template Engine: ${report.ok?'PASS':'FAIL'}`);console.table(r);console.log(report);console.groupEnd();return report;
+}
+window.runPhase41SelfTest=runPhase41SelfTest;window.exportTemplateDefinitionV41=exportTemplateDefinitionV41;window.renderDocumentFromTemplateV41=renderDocumentFromTemplateV41;
+(function(){const f=()=>{try{initDocumentTemplateEngineV41()}catch(e){console.warn('Phase 4.1 bootstrap failed',e)}};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',f,{once:true});else f()})();
+</script></body></html>
