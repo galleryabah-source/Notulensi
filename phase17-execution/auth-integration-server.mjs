@@ -1,11 +1,11 @@
 import { createServer } from 'node:http';
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 
 const PORT = Number(process.env.AUTH_INTEGRATION_PORT || 4180);
 const ROOT = process.cwd();
-const SESSION_TTL_MS = 5 * 60 * 1000;
+const SESSION_TTL_MS = Number(process.env.AUTH_SESSION_TTL_MS || 5 * 60 * 1000);
 
 const users = new Map();
 const sessions = new Map();
@@ -25,6 +25,7 @@ function seedUser(username, password, role, ownerId) {
 seedUser('admin', 'phase17-admin-password', 'ADMIN', 'owner-admin');
 seedUser('operator', 'phase17-operator-password', 'OPERATOR', 'owner-a');
 seedUser('viewer', 'phase17-viewer-password', 'VIEWER', 'owner-a');
+seedUser('viewer-b', 'phase17-viewer-b-password', 'VIEWER', 'owner-b');
 
 function json(res, status, payload, headers = {}) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...headers });
