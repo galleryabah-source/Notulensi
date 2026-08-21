@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0",
+  "runId": "REPLACE_WITH_RUN_ID",
+  "commit": "REPLACE_WITH_COMMIT_SHA",
+  "environment": "local",
+  "generatedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "checks": [
+    {
+      "id": "17-E.1",
+      "phase": "17-E",
+      "name": "Repository integrity",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "details": "Requires actual repository inspection."
+    },
+    {
+      "id": "17-E.3",
+      "phase": "17",
+      "name": "Runtime evidence",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "details": "Must be populated by an execution environment; never mark PASS manually."
+    }
+  ]
+}
