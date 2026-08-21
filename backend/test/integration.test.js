@@ -21,6 +21,10 @@ async function request(path, options = {}) {
   return fetch(`http://127.0.0.1:${port}${path}`, options);
 }
 
+function authFor(id = userId, role = 'user') {
+  return `Bearer ${jwt.sign({ sub: id, role }, jwtSecret)}`;
+}
+
 before(async () => {
   client = new Client({ connectionString: databaseUrl });
   await client.connect();
@@ -87,8 +91,21 @@ after(async () => {
   }
 });
 
+test('authentication and ownership boundaries are enforced', async () => {
+  const unauthenticated = await request('/api/shares', { method: 'GET' });
+  assert.equal(unauthenticated.status, 401);
+
+  const attackerId = '00000000-0000-0000-0000-000000000001';
+  const crossOwner = await request('/api/shares', {
+    method: 'POST',
+    headers: { authorization: authFor(attackerId), 'content-type': 'application/json' },
+    body: JSON.stringify({ documentId: 'doc-integration', revisionId: 'rev-integration', visibility: 'unlisted' })
+  });
+  assert.equal(crossOwner.status, 403);
+});
+
 test('secure share lifecycle: create → resolve → rotate → revoke', async () => {
-  const auth = `Bearer ${jwt.sign({ sub: userId, role: 'user' }, jwtSecret)}`;
+  const auth = authFor();
   const create = await request('/api/shares', {
     method: 'POST',
     headers: { authorization: auth, 'content-type': 'application/json' },
@@ -130,6 +147,12 @@ test('secure share lifecycle: create → resolve → rotate → revoke', async (
   const revoked = await request(`/api/shares/${shareId}`, { headers: { 'x-share-token': rotated.accessToken } });
   assert.equal(revoked.status, 403);
 
+  const rotateRevoked = await request(`/api/shares/${shareId}/rotate`, {
+    method: 'POST',
+    headers: { authorization: auth }
+  });
+  assert.equal(rotateRevoked.status, 409);
+
   const audit = await request(`/api/shares/${shareId}/audit`, { headers: { authorization: auth } });
   assert.equal(audit.status, 200);
   const events = (await audit.json()).events.map((event) => event.event);
@@ -138,4 +161,35 @@ test('secure share lifecycle: create → resolve → rotate → revoke', async (
   assert.ok(events.includes('denied'));
   assert.ok(events.includes('rotated'));
   assert.ok(events.includes('revoked'));
+});
+
+test('share policy enforces authentication and per-share access limits', async () => {
+  const auth = authFor();
+  const create = await request('/api/shares', {
+    method: 'POST',
+    headers: { authorization: auth, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      documentId: 'doc-integration',
+      revisionId: 'rev-integration',
+      visibility: 'private',
+      policy: { allowAnonymousRead: false, maxAccessPerMinute: 1 }
+    })
+  });
+  assert.equal(create.status, 201);
+  const created = await create.json();
+
+  const anonymous = await request(`/api/shares/${created.share.id}`, {
+    headers: { 'x-share-token': created.accessToken }
+  });
+  assert.equal(anonymous.status, 401);
+
+  const first = await request(`/api/shares/${created.share.id}`, {
+    headers: { authorization: auth, 'x-share-token': created.accessToken }
+  });
+  assert.equal(first.status, 200);
+
+  const second = await request(`/api/shares/${created.share.id}`, {
+    headers: { authorization: auth, 'x-share-token': created.accessToken }
+  });
+  assert.equal(second.status, 429);
 });
