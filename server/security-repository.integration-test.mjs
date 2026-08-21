@@ -24,7 +24,7 @@ if (process.env.ALLOW_INTEGRATION_TESTS !== '1') {
     assert.equal(session.tokenHash, hashToken(token));
     assert.equal((await securityRepository.getActiveSessionByTokenHash(hashToken(token))).sessionId, sessionId);
 
-    const share = await securityRepository.createShare({ shareId, resourceType: 'MEETING', resourceId, ownerUserId: userId, permission: 'VIEW', createdBy: userId });
+    const share = await securityRepository.createShare({ shareId, resourceType: 'MEETING', resourceId, ownerUserId: userId, permission: 'EDIT', createdBy: userId });
     assert.equal(share.shareId, shareId);
     const recipient = await securityRepository.addShareRecipient({ shareId, recipientType: 'USER', recipientKey: otherUserId, permission: 'EDIT' });
 
@@ -56,7 +56,7 @@ if (process.env.ALLOW_INTEGRATION_TESTS !== '1') {
     });
     assert.equal(appendOnlyCheck, true);
 
-    // Security history is intentionally append-only. Test rows in the audit/revocation tables are not deleted.
+    // Security history is intentionally append-only. Test rows in audit/revocation history are not deleted.
     await withDatabaseConnection(async (client) => {
       await client.query('BEGIN');
       try {
