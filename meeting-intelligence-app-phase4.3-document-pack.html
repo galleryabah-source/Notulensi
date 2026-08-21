@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Meeting Intelligence Ultimate — Phase 4.5</title>
+<title>Meeting Intelligence Ultimate — Phase 4.6</title>
 <style>
 html,body{margin:0;height:100%;background:#020617;color:#e2e8f0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 body{display:flex;flex-direction:column}
@@ -13,7 +13,7 @@ body{display:flex;flex-direction:column}
 </style>
 </head>
 <body>
-<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.5</div><div id="status">Memuat Phase 4.2 + 4.3 + 4.3.1 + 4.3.2 + 4.4 + Distribution…</div></div>
+<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.6</div><div id="status">Memuat Phase 4.2 + 4.3 + 4.3.1 + 4.3.2 + 4.4 + 4.5 + Cloud Contract…</div></div>
 <iframe id="app" title="Meeting Intelligence Ultimate"></iframe>
 <script>
 (function(){
@@ -26,6 +26,7 @@ body{display:flex;flex-direction:column}
   const consistency='phase4.3.2-document-pack-consistency-addon.js';
   const exportEngine='phase4.4-document-export-engine-addon.js';
   const distribution='phase4.5-document-distribution-sharing-addon.js';
+  const cloud='phase4.6-cloud-distribution-contract-addon.js';
   iframe.src=baseline;
   iframe.addEventListener('load',function(){
     try{
@@ -44,11 +45,12 @@ body{display:flex;flex-direction:column}
         .then(()=>loadScript(consistency))
         .then(()=>loadScript(exportEngine))
         .then(()=>loadScript(distribution))
-        .then(()=>{status.textContent='Phase 4.5 aktif — Document Distribution & Sharing siap digunakan.';})
-        .catch(e=>{status.textContent='Phase 4.5 gagal dimuat: '+e.message;console.warn('Phase 4.5 launcher:',e);});
+        .then(()=>loadScript(cloud))
+        .then(()=>{status.textContent='Phase 4.6 aktif — Cloud Distribution Contract siap digunakan.';})
+        .catch(e=>{status.textContent='Phase 4.6 gagal dimuat: '+e.message;console.warn('Phase 4.6 launcher:',e);});
     }catch(e){
-      status.textContent='Tidak dapat mengaktifkan Phase 4.5. Jalankan folder melalui HTTP lokal (mis. npx serve) lalu buka launcher ini.';
-      console.warn('Phase 4.5 launcher:',e);
+      status.textContent='Tidak dapat mengaktifkan Phase 4.6. Jalankan folder melalui HTTP lokal (mis. npx serve) lalu buka launcher ini.';
+      console.warn('Phase 4.6 launcher:',e);
     }
   });
 })();
