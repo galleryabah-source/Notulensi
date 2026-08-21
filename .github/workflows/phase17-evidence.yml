@@ -59,10 +59,14 @@ jobs:
       PERFORMANCE_REGRESSION_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/performance-regression-evidence.json
       AI_COST_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/ai-cost-evidence.json
       AI_COST_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/ai-cost-evidence.json
+      OBSERVABILITY_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/observability-evidence.json
+      OBSERVABILITY_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/observability-evidence.json
       AI_RUNTIME_ENDPOINT: /api/ai/usage
       AI_EXPECTED_STATUS: 200
       AI_MAX_COST: 0.05
       AI_MAX_TOKENS: 4000
+      OBSERVABILITY_HEALTH_ENDPOINT: /api/health
+      OBSERVABILITY_MAX_LATENCY_MS: 1500
       AUTH_INTEGRATION_BASE_URL: http://127.0.0.1:4180
       AUTH_INTEGRATION_PORT: 4180
       AUTH_SESSION_TTL_MS: 1000
@@ -90,12 +94,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Verify Git identity
         shell: bash
         run: |
@@ -103,7 +105,6 @@ jobs:
           actual="$(git rev-parse HEAD)"
           echo "CI_COMMIT=$actual"
           test "$actual" = "${GITHUB_SHA}"
-
       - name: Validate Phase 17 JavaScript syntax
         shell: bash
         run: |
@@ -111,182 +112,96 @@ jobs:
           shopt -s nullglob
           files=(phase17*.js phase17-execution/*.mjs)
           test "${#files[@]}" -gt 0
-          for file in "${files[@]}"; do
-            echo "Checking $file"
-            node --check "$file"
-          done
-
+          for file in "${files[@]}"; do node --check "$file"; done
       - name: Run authentication boundary discovery
         shell: bash
         run: node phase17-execution/auth-boundary-audit.mjs
-
       - name: Start isolated authentication integration fixture
         shell: bash
         run: |
           set -euo pipefail
-          nohup node phase17-execution/auth-integration-server.mjs > /tmp/phase17-auth.log 2>&1 &
-          for attempt in $(seq 1 20); do
-            status="$(curl -sS --max-time 2 "$AUTH_INTEGRATION_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"
-            if [ "$status" = "401" ]; then exit 0; fi
-            sleep 1
-          done
-          cat /tmp/phase17-auth.log || true
-          exit 1
-
+          nohup node phase17-execution/auth-integration-server.mjs >/tmp/phase17-auth.log 2>&1 &
+          for attempt in $(seq 1 20); do status="$(curl -sS --max-time 2 "$AUTH_INTEGRATION_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"; [ "$status" = "401" ] && exit 0; sleep 1; done
+          cat /tmp/phase17-auth.log || true; exit 1
       - name: Run isolated authentication/RBAC integration harness
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/auth-integration-harness.mjs
-          status=$?
-          set -e
-          test "$status" -eq 0 || echo "Isolated auth fixture failed; readiness remains fail-closed."
-
+        run: node phase17-execution/auth-integration-harness.mjs
       - name: Start application authentication boundary fixture
         shell: bash
         run: |
           set -euo pipefail
-          nohup node phase17-execution/application-server-boundary.mjs > /tmp/phase17-application-auth.log 2>&1 &
-          for attempt in $(seq 1 20); do
-            status="$(curl -sS --max-time 2 "$APPLICATION_SERVER_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"
-            if [ "$status" = "401" ]; then exit 0; fi
-            sleep 1
-          done
-          cat /tmp/phase17-application-auth.log || true
-          exit 1
-
+          nohup node phase17-execution/application-server-boundary.mjs >/tmp/phase17-application-auth.log 2>&1 &
+          for attempt in $(seq 1 20); do status="$(curl -sS --max-time 2 "$APPLICATION_SERVER_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"; [ "$status" = "401" ] && exit 0; sleep 1; done
+          cat /tmp/phase17-application-auth.log || true; exit 1
       - name: Run application authentication boundary harness
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/application-server-boundary-harness.mjs
-          status=$?
-          set -e
-          test "$status" -eq 0 || echo "Application auth fixture failed; readiness remains fail-closed."
-
+        run: node phase17-execution/application-server-boundary-harness.mjs
       - name: Run application authentication integration gate
         shell: bash
         run: node phase17-execution/application-auth-integration-gate.mjs
-
       - name: Start Meeting Intelligence real runtime adapter
         shell: bash
         run: |
           set -euo pipefail
-          nohup node phase17-execution/meeting-intelligence-runtime-server.mjs > /tmp/phase17-mi-runtime.log 2>&1 &
-          for attempt in $(seq 1 20); do
-            status="$(curl -sS --max-time 2 "$RUNTIME_BASE_URL$RUNTIME_APP_PATH" -o /tmp/phase17-mi-entry.html -w '%{http_code}' || true)"
-            if [ "$status" = "200" ] && grep -q 'data-phase17-auth-adapter' /tmp/phase17-mi-entry.html; then
-              echo "Meeting Intelligence runtime adapter is ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          cat /tmp/phase17-mi-runtime.log || true
-          exit 1
-
+          nohup node phase17-execution/meeting-intelligence-runtime-server.mjs >/tmp/phase17-mi-runtime.log 2>&1 &
+          for attempt in $(seq 1 20); do status="$(curl -sS --max-time 2 "$RUNTIME_BASE_URL$RUNTIME_APP_PATH" -o /tmp/phase17-mi-entry.html -w '%{http_code}' || true)"; if [ "$status" = "200" ] && grep -q 'data-phase17-auth-adapter' /tmp/phase17-mi-entry.html; then exit 0; fi; sleep 1; done
+          cat /tmp/phase17-mi-runtime.log || true; exit 1
       - name: Run Meeting Intelligence real application auth harness
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/meeting-intelligence-runtime-auth-harness.mjs > phase17-execution/application-real-auth-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/application-real-auth-evidence.json
-          test "$status" -eq 0 || echo "Real application auth adapter failed; readiness remains fail-closed."
-
+        run: node phase17-execution/meeting-intelligence-runtime-auth-harness.mjs >phase17-execution/application-real-auth-evidence.json
       - name: Run Meeting Intelligence real application security regression
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/meeting-intelligence-security-regression.mjs > phase17-execution/security-regression-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/security-regression-evidence.json
-          test "$status" -eq 0 || echo "Real application security regression failed; readiness remains fail-closed."
-
+        run: node phase17-execution/meeting-intelligence-security-regression.mjs >phase17-execution/security-regression-evidence.json
       - name: Run real PostgreSQL backup and restore drill
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/backup-restore-regression.mjs > phase17-execution/backup-restore-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/backup-restore-evidence.json
-          test "$status" -eq 0 || echo "Backup/restore drill failed; readiness remains fail-closed."
-
+        run: node phase17-execution/backup-restore-regression.mjs >phase17-execution/backup-restore-evidence.json
       - name: Run controlled disaster recovery drill
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/disaster-recovery-regression.mjs > phase17-execution/disaster-recovery-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/disaster-recovery-evidence.json
-          test "$status" -eq 0 || echo "Disaster recovery drill failed; readiness remains fail-closed."
-
+        run: node phase17-execution/disaster-recovery-regression.mjs >phase17-execution/disaster-recovery-evidence.json
       - name: Run real application performance regression
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/performance-regression.mjs > phase17-execution/performance-regression-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/performance-regression-evidence.json
-          test "$status" -eq 0 || echo "Performance regression failed; readiness remains fail-closed."
-
+        run: node phase17-execution/performance-regression.mjs >phase17-execution/performance-regression-evidence.json
       - name: Run real application AI usage and cost regression
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/ai-cost-regression.mjs > phase17-execution/ai-cost-evidence.json
-          status=$?
-          set -e
-          cat phase17-execution/ai-cost-evidence.json
-          test "$status" -eq 0 || echo "AI usage/cost regression failed; readiness remains fail-closed."
-
+        run: node phase17-execution/ai-cost-regression.mjs >phase17-execution/ai-cost-evidence.json
+      - name: Run real application observability regression
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/observability-regression.mjs >phase17-execution/observability-evidence.json
       - name: Run runtime harness
         shell: bash
         continue-on-error: true
-        run: |
-          set +e
-          node phase17-execution/runtime-harness.mjs
-          status=$?
-          set -e
-          test "$status" -eq 0 || echo "Runtime harness returned status $status; evidence remains fail-closed."
-
+        run: node phase17-execution/runtime-harness.mjs
       - name: Run evidence collector
         continue-on-error: true
         shell: bash
         run: node phase17-execution/evidence-collector.mjs
-
       - name: Run fail-closed readiness aggregation
         shell: bash
         run: |
           set +e
-          node phase17-execution/readiness-aggregator.mjs > phase17-execution/readiness-result.json
+          node phase17-execution/readiness-aggregator.mjs >phase17-execution/readiness-result.json
           status=$?
           set -e
           cat phase17-execution/readiness-result.json
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
-
       - name: Classify blockers
         shell: bash
         run: |
           set +e
-          node phase17-execution/blocker-classifier.mjs > phase17-execution/blockers.json
+          node phase17-execution/blocker-classifier.mjs >phase17-execution/blockers.json
           status=$?
           set -e
           cat phase17-execution/blockers.json
           if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
-
       - name: Upload Phase 17 evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -303,6 +218,7 @@ jobs:
             phase17-execution/disaster-recovery-evidence.json
             phase17-execution/performance-regression-evidence.json
             phase17-execution/ai-cost-evidence.json
+            phase17-execution/observability-evidence.json
             phase17-execution/runtime-evidence.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
