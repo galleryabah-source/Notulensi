@@ -1,5 +1,7 @@
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id text NOT NULL UNIQUE,
@@ -42,8 +44,7 @@ CREATE TABLE IF NOT EXISTS share_recipients (
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz,
   revoked_at timestamptz,
-  metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
-  CHECK (revoked_at IS NULL OR revoked_at <= now())
+  metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS token_events (
