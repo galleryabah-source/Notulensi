@@ -37,4 +37,12 @@ A failed or blocked check must enter the remediation track before a final Go dec
 - rollback/canary
 - release metadata
 
+## Authentication/RBAC boundary discovery
+
+`auth-boundary-audit.mjs` is a discovery gate, not an authentication implementation. It records whether the repository contains the previously defined authentication/RBAC contract artifacts and whether an executable server/runtime boundary is discoverable.
+
+Contract artifacts such as `phase13.3`, `phase13.4`, `phase14.4`, `phase14.5`, `phase15.4`, and `phase15.5` are evidence of design/contract intent only. They must not be promoted to runtime `PASS` without actual login/session/authorization execution.
+
+If no executable authentication boundary exists, the resulting domain remains `17-E.runtime.auth = NOT_RUN` and the production-readiness gate remains fail-closed.
+
 The manifest template is intentionally incomplete and must never be edited to fabricate successful runtime results.
