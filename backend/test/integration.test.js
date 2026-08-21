@@ -46,7 +46,7 @@ before(async () => {
   await client.query(`UPDATE documents SET current_revision_id='rev-integration' WHERE id='doc-integration'`);
 
   server = spawn(process.execPath, ['src/server.js'], {
-    cwd: new URL('..', import.meta.url),
+    cwd: process.cwd(),
     env: {
       ...process.env,
       PORT: String(port),
@@ -82,7 +82,7 @@ before(async () => {
 after(async () => {
   if (server) server.kill('SIGTERM');
   if (client) {
-    await client.query('DELETE FROM documents WHERE id=\'doc-integration\'').catch(() => {});
+    await client.query("DELETE FROM documents WHERE id='doc-integration'").catch(() => {});
     await client.end();
   }
 });
