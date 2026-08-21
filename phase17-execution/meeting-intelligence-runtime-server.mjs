@@ -42,7 +42,7 @@ function session(req) {
 }
 function sendJson(res, status, body, headers = {}) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers });
   res.end(payload);
 }
 function body(req) {
@@ -86,17 +86,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET') {
       const pathname = decodeURIComponent(new URL(req.url, `http://${HOST}:${PORT}`).pathname);
+      if (pathname.split('/').includes('..')) return sendJson(res, 403, { ok: false, error: 'FORBIDDEN_PATH' });
       const relative = pathname === '/' ? ENTRY : pathname;
       const safe = normalize(relative).replace(/^([.][.][\\/])+/, '').replace(/^\//, '');
       const file = join(ROOT, safe);
       const data = await readFile(file);
       if (extname(file).toLowerCase() === '.html') {
         const html = data.toString('utf8').replace(/<\/body>/i, `${injected}</body>`);
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
         return res.end(html);
       }
       const types = { '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml' };
-      res.writeHead(200, { 'content-type': types[extname(file).toLowerCase()] || 'application/octet-stream' });
+      res.writeHead(200, { 'content-type': types[extname(file).toLowerCase()] || 'application/octet-stream', 'x-content-type-options': 'nosniff' });
       return res.end(data);
     }
     return sendJson(res, 404, { ok: false, error: 'NOT_FOUND' });
