@@ -70,10 +70,8 @@ function checkDatabase() {
     psqlQuery(`INSERT INTO ${schema}.probe (token) VALUES ('${value}')`);
     const selected = psqlQuery(`SELECT token FROM ${schema}.probe WHERE token = '${value}'`) === value;
 
-    psqlQuery('BEGIN');
-    psqlQuery(`INSERT INTO ${schema}.probe (token) VALUES ('${rollbackValue}')`);
-    psqlQuery('ROLLBACK');
-    const rollbackCount = psqlQuery(`SELECT COUNT(*) FROM ${schema}.probe WHERE token = '${rollbackValue}'`) === '0';
+    const transactionResult = psqlQuery(`BEGIN; INSERT INTO ${schema}.probe (token) VALUES ('${rollbackValue}'); ROLLBACK; SELECT COUNT(*) FROM ${schema}.probe WHERE token = '${rollbackValue}';`);
+    const rollbackCount = transactionResult === '0';
 
     psqlQuery(`DROP SCHEMA ${schema} CASCADE`);
     const finalStatus = selected && rollbackCount ? 'PASS' : 'FAIL';
@@ -82,7 +80,7 @@ function checkDatabase() {
       phase: 'database',
       name: 'PostgreSQL runtime behavior',
       status: finalStatus,
-      evidence: ['PostgreSQL service', 'CREATE SCHEMA', 'CREATE TABLE', 'INSERT/SELECT', 'transaction rollback', 'schema cleanup'],
+      evidence: ['PostgreSQL service', 'CREATE SCHEMA', 'CREATE TABLE', 'INSERT/SELECT', 'single-session transaction rollback', 'schema cleanup'],
       details: `Isolated PostgreSQL probe selected=${selected}; rollbackCountZero=${rollbackCount}.`
     };
   } catch (error) {
