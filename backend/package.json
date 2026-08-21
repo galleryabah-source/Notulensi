@@ -6,7 +6,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js && node --check src/security.js && node --check test/security.test.js",
+    "test": "node --test test/security.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
