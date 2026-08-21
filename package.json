@@ -13,7 +13,8 @@
     "runtime:self-test": "node server/runtime-self-test.mjs",
     "security:integration-test": "node server/security-repository.integration-test.mjs",
     "security:endpoint-contract-test": "node server/security/protected-endpoint-contract.self-test.mjs",
-    "security:regression-test": "node server/security/security-integration-regression.self-test.mjs"
+    "security:regression-test": "node server/security/security-integration-regression.self-test.mjs",
+    "security:pilot-test": "node server/security/controlled-endpoint-pilot.self-test.mjs"
   },
   "dependencies": {
     "pg": "^8.16.3"
