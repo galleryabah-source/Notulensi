@@ -21,6 +21,7 @@ const applicationAuthEvidence = loadJson(process.env.APPLICATION_AUTH_EVIDENCE_I
 const applicationAuthIntegration = loadJson(process.env.APPLICATION_AUTH_INTEGRATION_INPUT || `${root}/phase17-execution/application-auth-integration.json`);
 const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
 const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
+const backupRestoreEvidence = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
@@ -29,28 +30,25 @@ for (const [id,phase,name,details] of runtimeDomains) {
     const realAppPass = applicationRealAuthEvidence?.applicationRuntimeIntegrated === true && applicationRealAuthEvidence?.integrationFixture === false && Array.isArray(applicationRealAuthEvidence.checks) && applicationRealAuthEvidence.checks.length > 0 && applicationRealAuthEvidence.checks.every(check => check.status === 'PASS');
     const fixturePass = applicationAuthEvidence?.integrationFixture === true && Array.isArray(applicationAuthEvidence.checks) && applicationAuthEvidence.checks.length > 0 && applicationAuthEvidence.checks.every(check => check.status === 'PASS');
     const integrationPass = applicationAuthIntegration?.status === 'PASS' && applicationAuthIntegration?.applicationRuntimeIntegrated === true && applicationAuthIntegration?.fixturePromotionAllowed === true;
-    if (realAppPass) {
-      observed = { status:'PASS', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real Meeting Intelligence runtime adapter served the application entrypoint and executable authentication/RBAC checks passed on the same runtime origin.' };
-    } else if (applicationRealAuthEvidence?.checks?.some(check => check.status === 'FAIL')) {
-      observed = { status:'FAIL', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real application runtime authentication evidence contains a failed executable check.' };
-    } else if (fixturePass && integrationPass) {
-      observed = { status:'PASS', evidence:['phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json'], details:'Executable authentication/RBAC checks passed and the real application runtime explicitly reported authenticated integration.' };
-    } else if (applicationAuthIntegration?.status === 'FAIL') {
-      observed = applicationAuthIntegration;
-    } else {
-      observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json','phase17-execution/application-real-auth-evidence.json'], details:applicationRealAuthEvidence?.details || applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
-    }
+    if (realAppPass) observed = { status:'PASS', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real Meeting Intelligence runtime adapter served the application entrypoint and executable authentication/RBAC checks passed on the same runtime origin.' };
+    else if (applicationRealAuthEvidence?.checks?.some(check => check.status === 'FAIL')) observed = { status:'FAIL', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real application runtime authentication evidence contains a failed executable check.' };
+    else if (fixturePass && integrationPass) observed = { status:'PASS', evidence:['phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json'], details:'Executable authentication/RBAC checks passed and the real application runtime explicitly reported authenticated integration.' };
+    else if (applicationAuthIntegration?.status === 'FAIL') observed = applicationAuthIntegration;
+    else observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json','phase17-execution/application-real-auth-evidence.json'], details:applicationRealAuthEvidence?.details || applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
   }
   if (id === '17-E.runtime.security') {
     const realSecurityPass = securityRegressionEvidence?.applicationRuntimeIntegrated === true && securityRegressionEvidence?.integrationFixture === false && Array.isArray(securityRegressionEvidence.checks) && securityRegressionEvidence.checks.length > 0 && securityRegressionEvidence.checks.every(check => check.status === 'PASS');
     const failed = securityRegressionEvidence?.checks?.some(check => check.status === 'FAIL');
-    if (realSecurityPass) {
-      observed = { status:'PASS', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real Meeting Intelligence runtime security regression completed with every executable security boundary check passing.' };
-    } else if (failed) {
-      observed = { status:'FAIL', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real application runtime security regression contains a failed executable security check.' };
-    } else {
-      observed = { status:'NOT_RUN', evidence:['phase17-execution/security-regression-evidence.json'], details:'Security regression has not produced complete real-application executable evidence.' };
-    }
+    if (realSecurityPass) observed = { status:'PASS', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real Meeting Intelligence runtime security regression completed with every executable security boundary check passing.' };
+    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real application runtime security regression contains a failed executable security check.' };
+    else observed = { status:'NOT_RUN', evidence:['phase17-execution/security-regression-evidence.json'], details:'Security regression has not produced complete real-application executable evidence.' };
+  }
+  if (id === '17-E.runtime.backup') {
+    const realBackupPass = backupRestoreEvidence?.applicationRuntimeIntegrated === true && backupRestoreEvidence?.integrationFixture === false && backupRestoreEvidence?.status === 'PASS' && Array.isArray(backupRestoreEvidence.checks) && backupRestoreEvidence.checks.length > 0 && backupRestoreEvidence.checks.every(check => check.status === 'PASS');
+    const failed = backupRestoreEvidence?.checks?.some(check => check.status === 'FAIL') || backupRestoreEvidence?.status === 'FAIL';
+    if (realBackupPass) observed = { status:'PASS', evidence:['phase17-execution/backup-restore-evidence.json'], details:'A real PostgreSQL custom-format backup was created, restored into an isolated database, and controlled data/schema integrity checks passed.' };
+    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill contains a failed executable check.' };
+    else observed = { status:'NOT_RUN', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill has not produced complete real-database evidence.' };
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
 }
