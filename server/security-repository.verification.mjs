@@ -10,8 +10,10 @@ if (process.env.ALLOW_INTEGRATION_TESTS !== '1') {
   const suffix = crypto.randomUUID();
   const ownerId = `verify-owner-${suffix}`;
   const recipientId = `verify-recipient-${suffix}`;
+  const highRecipientId = `verify-high-${suffix}`;
   const ownerSessionId = `verify-owner-session-${suffix}`;
   const recipientSessionId = `verify-recipient-session-${suffix}`;
+  const highSessionId = `verify-high-session-${suffix}`;
   const resourceId = `verify-resource-${suffix}`;
   const shareId = `verify-share-${suffix}`;
   const ownerToken = `owner-token-${suffix}`;
@@ -27,7 +29,7 @@ if (process.env.ALLOW_INTEGRATION_TESTS !== '1') {
       try {
         await client.query('DELETE FROM share_recipients WHERE share_id=$1', [shareId]);
         await client.query('DELETE FROM share_records WHERE share_id=$1', [shareId]);
-        await client.query('DELETE FROM auth_sessions WHERE session_id IN ($1,$2)', [ownerSessionId, recipientSessionId]);
+        await client.query('DELETE FROM auth_sessions WHERE session_id IN ($1,$2,$3)', [ownerSessionId, recipientSessionId, highSessionId]);
         await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK');
@@ -114,19 +116,19 @@ if (process.env.ALLOW_INTEGRATION_TESTS !== '1') {
     const highRecipient = await securityRepository.addShareRecipient({
       shareId,
       recipientType: 'USER',
-      recipientKey: `high-${recipientId}`,
+      recipientKey: highRecipientId,
       permission: 'MANAGE',
     });
     assert.equal(highRecipient.permission, 'MANAGE');
     await securityRepository.createSession({
-      sessionId: `high-session-${suffix}`,
-      userId: `high-${recipientId}`,
+      sessionId: highSessionId,
+      userId: highRecipientId,
       token: `high-token-${suffix}`,
       expiresAt,
     });
     const capped = await securityRepository.authorizeResourceAccess({
-      sessionId: `high-session-${suffix}`,
-      actorUserId: `high-${recipientId}`,
+      sessionId: highSessionId,
+      actorUserId: highRecipientId,
       resourceType: 'MEETING',
       resourceId,
       requiredPermission: 'MANAGE',
