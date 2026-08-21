@@ -45,6 +45,8 @@ jobs:
       AUTH_RUNTIME_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/auth-runtime-evidence.json
       APPLICATION_AUTH_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/application-auth-evidence.json
       APPLICATION_AUTH_INTEGRATION_OUTPUT: ${{ github.workspace }}/phase17-execution/application-auth-integration.json
+      APPLICATION_REAL_AUTH_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/application-real-auth-evidence.json
+      APPLICATION_REAL_AUTH_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/application-real-auth-evidence.json
       AUTH_INTEGRATION_BASE_URL: http://127.0.0.1:4180
       AUTH_INTEGRATION_PORT: 4180
       AUTH_SESSION_TTL_MS: 1000
@@ -53,6 +55,8 @@ jobs:
       APPLICATION_SESSION_TTL_MS: 1000
       RUNTIME_BASE_URL: http://127.0.0.1:4173
       RUNTIME_APP_PATH: /meeting-intelligence-app-phase4.3-integrated-safe.html
+      MI_RUNTIME_HOST: 127.0.0.1
+      MI_RUNTIME_PORT: 4173
       PGHOST: 127.0.0.1
       PGPORT: 5432
       PGUSER: postgres
@@ -92,8 +96,7 @@ jobs:
 
       - name: Run authentication boundary discovery
         shell: bash
-        run: |
-          node phase17-execution/auth-boundary-audit.mjs
+        run: node phase17-execution/auth-boundary-audit.mjs
 
       - name: Start isolated authentication integration fixture
         shell: bash
@@ -102,10 +105,7 @@ jobs:
           nohup node phase17-execution/auth-integration-server.mjs > /tmp/phase17-auth.log 2>&1 &
           for attempt in $(seq 1 20); do
             status="$(curl -sS --max-time 2 "$AUTH_INTEGRATION_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"
-            if [ "$status" = "401" ]; then
-              echo "Authentication integration fixture is ready (expected unauthenticated 401)"
-              exit 0
-            fi
+            if [ "$status" = "401" ]; then exit 0; fi
             sleep 1
           done
           cat /tmp/phase17-auth.log || true
@@ -119,7 +119,7 @@ jobs:
           node phase17-execution/auth-integration-harness.mjs
           status=$?
           set -e
-          test "$status" -eq 0 || echo "Isolated auth integration harness failed; production readiness remains fail-closed."
+          test "$status" -eq 0 || echo "Isolated auth fixture failed; readiness remains fail-closed."
 
       - name: Start application authentication boundary fixture
         shell: bash
@@ -128,10 +128,7 @@ jobs:
           nohup node phase17-execution/application-server-boundary.mjs > /tmp/phase17-application-auth.log 2>&1 &
           for attempt in $(seq 1 20); do
             status="$(curl -sS --max-time 2 "$APPLICATION_SERVER_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"
-            if [ "$status" = "401" ]; then
-              echo "Application authentication boundary fixture is ready"
-              exit 0
-            fi
+            if [ "$status" = "401" ]; then exit 0; fi
             sleep 1
           done
           cat /tmp/phase17-application-auth.log || true
@@ -145,27 +142,38 @@ jobs:
           node phase17-execution/application-server-boundary-harness.mjs
           status=$?
           set -e
-          test "$status" -eq 0 || echo "Application auth boundary harness failed; readiness remains fail-closed."
+          test "$status" -eq 0 || echo "Application auth fixture failed; readiness remains fail-closed."
 
-      - name: Run real application authentication integration gate
+      - name: Run application authentication integration gate
         shell: bash
-        run: |
-          node phase17-execution/application-auth-integration-gate.mjs
+        run: node phase17-execution/application-auth-integration-gate.mjs
 
-      - name: Start application runtime harness server
+      - name: Start Meeting Intelligence real runtime adapter
         shell: bash
         run: |
           set -euo pipefail
-          nohup python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/phase17-http.log 2>&1 &
+          nohup node phase17-execution/meeting-intelligence-runtime-server.mjs > /tmp/phase17-mi-runtime.log 2>&1 &
           for attempt in $(seq 1 20); do
-            if curl -fsS --max-time 2 "$RUNTIME_BASE_URL$RUNTIME_APP_PATH" > /dev/null; then
-              echo "Application runtime server is ready"
+            status="$(curl -sS --max-time 2 "$RUNTIME_BASE_URL$RUNTIME_APP_PATH" -o /tmp/phase17-mi-entry.html -w '%{http_code}' || true)"
+            if [ "$status" = "200" ] && grep -q 'data-phase17-auth-adapter' /tmp/phase17-mi-entry.html; then
+              echo "Meeting Intelligence runtime adapter is ready"
               exit 0
             fi
             sleep 1
           done
-          cat /tmp/phase17-http.log || true
+          cat /tmp/phase17-mi-runtime.log || true
           exit 1
+
+      - name: Run Meeting Intelligence real application auth harness
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          node phase17-execution/meeting-intelligence-runtime-auth-harness.mjs > phase17-execution/application-real-auth-evidence.json
+          status=$?
+          set -e
+          cat phase17-execution/application-real-auth-evidence.json
+          test "$status" -eq 0 || echo "Real application auth adapter failed; readiness remains fail-closed."
 
       - name: Run runtime harness
         shell: bash
@@ -175,13 +183,12 @@ jobs:
           node phase17-execution/runtime-harness.mjs
           status=$?
           set -e
-          test "$status" -eq 0 || echo "Runtime harness returned status $status; evidence will be fail-closed."
+          test "$status" -eq 0 || echo "Runtime harness returned status $status; evidence remains fail-closed."
 
       - name: Run evidence collector
         continue-on-error: true
         shell: bash
-        run: |
-          node phase17-execution/evidence-collector.mjs
+        run: node phase17-execution/evidence-collector.mjs
 
       - name: Run fail-closed readiness aggregation
         shell: bash
@@ -191,9 +198,7 @@ jobs:
           status=$?
           set -e
           cat phase17-execution/readiness-result.json
-          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
-            exit "$status"
-          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
 
       - name: Classify blockers
         shell: bash
@@ -203,9 +208,7 @@ jobs:
           status=$?
           set -e
           cat phase17-execution/blockers.json
-          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
-            exit "$status"
-          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
 
       - name: Upload Phase 17 evidence
         if: always()
@@ -217,6 +220,7 @@ jobs:
             phase17-execution/auth-runtime-evidence.json
             phase17-execution/application-auth-evidence.json
             phase17-execution/application-auth-integration.json
+            phase17-execution/application-real-auth-evidence.json
             phase17-execution/runtime-evidence.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
