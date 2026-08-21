@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Meeting Intelligence Ultimate — Phase 4.3.1</title>
+<style>
+html,body{margin:0;height:100%;background:#020617;color:#e2e8f0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{display:flex;flex-direction:column}
+#bar{height:52px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;background:#0f172a;border-bottom:1px solid #1e293b}
+#title{font-size:14px;font-weight:700}#status{font-size:12px;color:#94a3b8}
+#app{flex:1;border:0;width:100%;background:#020617}
+</style>
+</head>
+<body>
+<div id="bar"><div id="title">🧠 Meeting Intelligence AI — PHASE 4.3.1</div><div id="status">Memuat Phase 4.2 + 4.3 + Revision Management…</div></div>
+<iframe id="app" title="Meeting Intelligence Ultimate"></iframe>
+<script>
+(function(){
+  const iframe=document.getElementById('app');
+  const status=document.getElementById('status');
+  const baseline='meeting-intelligence-app-phase4.2-document-versioning-traceability.html';
+  const phase42='phase4.2-document-versioning-traceability.js';
+  const addon='phase4.3-document-pack-addon.js';
+  const revision='phase4.3.1-document-pack-revisions-addon.js';
+  iframe.src=baseline;
+  iframe.addEventListener('load',function(){
+    try{
+      const doc=iframe.contentDocument;
+      if(!doc) throw new Error('Dokumen iframe tidak dapat diakses.');
+      const loadScript=(src)=>new Promise((resolve,reject)=>{
+        const script=doc.createElement('script');
+        script.src=src;
+        script.onload=resolve;
+        script.onerror=()=>reject(new Error(`Gagal memuat ${src}`));
+        doc.body.appendChild(script);
+      });
+      loadScript(phase42)
+        .then(()=>loadScript(addon))
+        .then(()=>loadScript(revision))
+        .then(()=>{status.textContent='Phase 4.3.1 aktif — Document Pack + Revision Management siap digunakan.';})
+        .catch(e=>{status.textContent='Phase 4.3.1 gagal dimuat: '+e.message;console.warn('Phase 4.3.1 launcher:',e);});
+    }catch(e){
+      status.textContent='Tidak dapat mengaktifkan Phase 4.3.1. Jalankan folder melalui HTTP lokal (mis. npx serve) lalu buka launcher ini.';
+      console.warn('Phase 4.3.1 launcher:',e);
+    }
+  });
+})();
+</script>
+</body>
+</html>
