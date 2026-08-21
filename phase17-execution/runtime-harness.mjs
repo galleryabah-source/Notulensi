@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
@@ -40,6 +40,10 @@ function checkHttpHealth() {
   }
 }
 
+function psqlQuery(sql) {
+  return run('psql', ['-v', 'ON_ERROR_STOP=1', '-Atqc', sql]);
+}
+
 function checkDatabase() {
   const required = ['PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'];
   const missing = required.filter((key) => !process.env[key]);
@@ -57,31 +61,32 @@ function checkDatabase() {
   const schema = 'phase17_e10_runtime';
   const token = randomUUID().replaceAll('-', '');
   const value = `runtime-${token}`;
-  const sql = [
-    `CREATE SCHEMA IF NOT EXISTS ${schema};`,
-    `CREATE TABLE IF NOT EXISTS ${schema}.probe (id BIGSERIAL PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`,
-    `INSERT INTO ${schema}.probe (token) VALUES ('${value}');`,
-    `SELECT token FROM ${schema}.probe WHERE token = '${value}';`,
-    `BEGIN; INSERT INTO ${schema}.probe (token) VALUES ('rollback-${token}'); ROLLBACK;`,
-    `SELECT COUNT(*) FROM ${schema}.probe WHERE token = 'rollback-${token}';`,
-    `DROP SCHEMA ${schema} CASCADE;`
-  ].join(' ');
+  const rollbackValue = `rollback-${token}`;
 
   try {
-    const result = run('psql', ['-v', 'ON_ERROR_STOP=1', '-Atqc', sql]);
-    const lines = result.split(/\r?\n/).filter(Boolean);
-    const selected = lines.some((line) => line === value);
-    const rollbackCount = lines.at(-1) === '0';
+    psqlQuery(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    psqlQuery(`CREATE SCHEMA ${schema}`);
+    psqlQuery(`CREATE TABLE ${schema}.probe (id BIGSERIAL PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    psqlQuery(`INSERT INTO ${schema}.probe (token) VALUES ('${value}')`);
+    const selected = psqlQuery(`SELECT token FROM ${schema}.probe WHERE token = '${value}'`) === value;
+
+    psqlQuery('BEGIN');
+    psqlQuery(`INSERT INTO ${schema}.probe (token) VALUES ('${rollbackValue}')`);
+    psqlQuery('ROLLBACK');
+    const rollbackCount = psqlQuery(`SELECT COUNT(*) FROM ${schema}.probe WHERE token = '${rollbackValue}'`) === '0';
+
+    psqlQuery(`DROP SCHEMA ${schema} CASCADE`);
     const finalStatus = selected && rollbackCount ? 'PASS' : 'FAIL';
     return {
       id: '17-E.runtime.database',
       phase: 'database',
       name: 'PostgreSQL runtime behavior',
       status: finalStatus,
-      evidence: ['PostgreSQL service', 'CREATE/INSERT/SELECT', 'transaction rollback', 'schema cleanup'],
+      evidence: ['PostgreSQL service', 'CREATE SCHEMA', 'CREATE TABLE', 'INSERT/SELECT', 'transaction rollback', 'schema cleanup'],
       details: `Isolated PostgreSQL probe selected=${selected}; rollbackCountZero=${rollbackCount}.`
     };
   } catch (error) {
+    try { psqlQuery(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); } catch {}
     return {
       id: '17-E.runtime.database',
       phase: 'database',
