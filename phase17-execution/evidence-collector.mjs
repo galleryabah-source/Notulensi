@@ -20,6 +20,19 @@ const required = [
   ['17.14','phase17.14-blueprint-closure.js'],
 ];
 
+const runtimeDomains = [
+  ['17-E.runtime.health','runtime','Runtime health','Requires a real application execution environment.'],
+  ['17-E.runtime.database','database','Database behavior','Requires a real database connection and controlled test data.'],
+  ['17-E.runtime.auth','security','Authentication/RBAC','Requires real authentication and authorization execution.'],
+  ['17-E.runtime.security','security','Security regression','Requires executable security tests in a configured environment.'],
+  ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.'],
+  ['17-E.runtime.observability','observability','Observability','Requires real logs/metrics/traces from the running system.'],
+  ['17-E.runtime.backup','backup','Backup/restore','Requires an actual backup and restore drill.'],
+  ['17-E.runtime.dr','disaster-recovery','Disaster recovery','Requires an actual DR/failover exercise.'],
+  ['17-E.runtime.performance','performance','Performance/load','Requires an executable performance test environment.'],
+  ['17-E.runtime.release','release','Rollback/canary/release','Requires controlled deployment evidence.'],
+];
+
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
@@ -40,6 +53,12 @@ const checks = required.map(([phase, path]) => {
 checks.push({
   id: '17-E.static.git', phase: '17-E', name: 'Git commit identity', status: /^[0-9a-f]{40}$/.test(commit) ? 'PASS' : 'FAIL', evidence: ['git rev-parse HEAD'], details: commit
 });
+
+// Runtime domains are deliberately NOT_RUN until a real execution harness supplies evidence.
+// This prevents a source-only CI run from being misclassified as production-ready.
+for (const [id, phase, name, details] of runtimeDomains) {
+  checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
+}
 
 const report = { schemaVersion:'1.0.0', runId:randomUUID(), commit, environment:process.env.NODE_ENV === 'production' ? 'production' : 'local', generatedAt, checks };
 const output = process.env.EVIDENCE_OUTPUT || `${root}/phase17-execution/evidence-report.json`;
