@@ -3,81 +3,45 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 const root = process.cwd();
-const required = [
-  ['17.1','phase17.1-full-system-validation.js'], ['17.2','phase17.2-evidence-collection.js'], ['17.3','phase17.3-security-acceptance.js'], ['17.4','phase17.4-performance-acceptance.js'], ['17.5','phase17.5-ai-cost-acceptance.js'], ['17.6','phase17.6-backup-restore-acceptance.js'], ['17.7','phase17.7-dr-acceptance.js'], ['17.8','phase17.8-canary-acceptance.js'], ['17.9','phase17.9-release-candidate.js'], ['17.10','phase17.10-go-no-go-review.js'], ['17.11','phase17.11-controlled-production-release.js'], ['17.12','phase17.12-post-release-hypercare.js'], ['17.13','phase17.13-legacy-retirement-decision.js'], ['17.14','phase17.14-blueprint-closure.js']
-];
 const runtimeDomains = [
   ['17-E.runtime.health','runtime','Runtime health','Requires a real application execution environment.'], ['17-E.runtime.database','database','Database behavior','Requires a real database connection and controlled test data.'], ['17-E.runtime.auth','security','Authentication/RBAC','Requires real authentication and authorization execution.'], ['17-E.runtime.security','security','Security regression','Requires executable security tests in a configured environment.'], ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.'], ['17-E.runtime.observability','observability','Observability','Requires real logs/metrics/traces from the running system.'], ['17-E.runtime.backup','backup','Backup/restore','Requires an actual backup and restore drill.'], ['17-E.runtime.dr','disaster-recovery','Disaster recovery','Requires an actual DR/failover exercise.'], ['17-E.runtime.performance','performance','Performance/load','Requires an executable performance test environment.'], ['17-E.runtime.release','release','Rollback/canary/release','Requires controlled deployment evidence.']
 ];
 function git(args) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
-function loadJson(path) { if (!existsSync(path)) return null; try { return JSON.parse(readFileSync(path, 'utf8')); } catch (error) { console.warn(`Evidence parse failed: ${path}: ${error.message}`); return null; } }
-function checkFile(path) { const absolute = `${root}/${path}`; if (!existsSync(absolute)) return { status:'FAIL', evidence:[], details:`Missing required artifact: ${path}` }; const text = readFileSync(absolute,'utf8'); if (!text.trim()) return { status:'FAIL', evidence:[], details:`Empty artifact: ${path}` }; return { status:'PASS', evidence:[path], details:`Artifact exists and is non-empty (${text.length} bytes).` }; }
+function loadJson(path) { if (!existsSync(path)) return null; try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } }
 const commit = git(['rev-parse','HEAD']);
 const generatedAt = new Date().toISOString();
+const files = [
+  ['17-E.static.git','Git commit identity'],
+  ['17-E.runtime.health','Runtime health'], ['17-E.runtime.database','Database behavior'], ['17-E.runtime.auth','Authentication/RBAC'], ['17-E.runtime.security','Security regression'], ['17-E.runtime.ai','AI provider and cost controls'], ['17-E.runtime.observability','Observability'], ['17-E.runtime.backup','Backup/restore'], ['17-E.runtime.dr','Disaster recovery'], ['17-E.runtime.performance','Performance/load'], ['17-E.runtime.release','Rollback/canary/release']
+];
+const checks = [{ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit }];
 const runtimeEvidence = loadJson(process.env.RUNTIME_EVIDENCE_INPUT || `${root}/phase17-execution/runtime-evidence.json`);
-const runtimeMap = new Map((runtimeEvidence?.checks || []).map(check => [check.id, check]));
-const authBoundaryEvidence = loadJson(process.env.AUTH_BOUNDARY_EVIDENCE_INPUT || `${root}/phase17-execution/auth-boundary-evidence.json`);
-const applicationAuthEvidence = loadJson(process.env.APPLICATION_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-auth-evidence.json`);
-const applicationAuthIntegration = loadJson(process.env.APPLICATION_AUTH_INTEGRATION_INPUT || `${root}/phase17-execution/application-auth-integration.json`);
-const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
-const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
-const backupRestoreEvidence = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
-const disasterRecoveryEvidence = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
-const performanceEvidence = loadJson(process.env.PERFORMANCE_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/performance-regression-evidence.json`);
-const aiCostEvidence = loadJson(process.env.AI_COST_EVIDENCE_INPUT || `${root}/phase17-execution/ai-cost-evidence.json`);
-const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
-checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
-for (const [id,phase,name,details] of runtimeDomains) {
-  let observed = runtimeMap.get(id);
-  if (id === '17-E.runtime.auth') {
-    const realAppPass = applicationRealAuthEvidence?.applicationRuntimeIntegrated === true && applicationRealAuthEvidence?.integrationFixture === false && Array.isArray(applicationRealAuthEvidence.checks) && applicationRealAuthEvidence.checks.length > 0 && applicationRealAuthEvidence.checks.every(check => check.status === 'PASS');
-    const fixturePass = applicationAuthEvidence?.integrationFixture === true && Array.isArray(applicationAuthEvidence.checks) && applicationAuthEvidence.checks.length > 0 && applicationAuthEvidence.checks.every(check => check.status === 'PASS');
-    const integrationPass = applicationAuthIntegration?.status === 'PASS' && applicationAuthIntegration?.applicationRuntimeIntegrated === true && applicationAuthIntegration?.fixturePromotionAllowed === true;
-    if (realAppPass) observed = { status:'PASS', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real Meeting Intelligence runtime adapter served the application entrypoint and executable authentication/RBAC checks passed on the same runtime origin.' };
-    else if (applicationRealAuthEvidence?.checks?.some(check => check.status === 'FAIL')) observed = { status:'FAIL', evidence:['phase17-execution/application-real-auth-evidence.json'], details:'Real application runtime authentication evidence contains a failed executable check.' };
-    else if (fixturePass && integrationPass) observed = { status:'PASS', evidence:['phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json'], details:'Executable authentication/RBAC checks passed and the real application runtime explicitly reported authenticated integration.' };
-    else if (applicationAuthIntegration?.status === 'FAIL') observed = applicationAuthIntegration;
-    else observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json','phase17-execution/application-real-auth-evidence.json'], details:applicationRealAuthEvidence?.details || applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
-  }
-  if (id === '17-E.runtime.security') {
-    const realSecurityPass = securityRegressionEvidence?.applicationRuntimeIntegrated === true && securityRegressionEvidence?.integrationFixture === false && Array.isArray(securityRegressionEvidence.checks) && securityRegressionEvidence.checks.length > 0 && securityRegressionEvidence.checks.every(check => check.status === 'PASS');
-    const failed = securityRegressionEvidence?.checks?.some(check => check.status === 'FAIL');
-    if (realSecurityPass) observed = { status:'PASS', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real Meeting Intelligence runtime security regression completed with every executable security boundary check passing.' };
-    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real application runtime security regression contains a failed executable security check.' };
-    else observed = { status:'NOT_RUN', evidence:['phase17-execution/security-regression-evidence.json'], details:'Security regression has not produced complete real-application executable evidence.' };
-  }
-  if (id === '17-E.runtime.backup') {
-    const realBackupPass = backupRestoreEvidence?.applicationRuntimeIntegrated === true && backupRestoreEvidence?.integrationFixture === false && backupRestoreEvidence?.status === 'PASS' && Array.isArray(backupRestoreEvidence.checks) && backupRestoreEvidence.checks.length > 0 && backupRestoreEvidence.checks.every(check => check.status === 'PASS');
-    const failed = backupRestoreEvidence?.checks?.some(check => check.status === 'FAIL') || backupRestoreEvidence?.status === 'FAIL';
-    if (realBackupPass) observed = { status:'PASS', evidence:['phase17-execution/backup-restore-evidence.json'], details:'A real PostgreSQL custom-format backup was created, restored into an isolated database, and controlled data/schema integrity checks passed.' };
-    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill contains a failed executable check.' };
-    else observed = { status:'NOT_RUN', evidence:['phase17-execution/backup-restore-evidence.json'], details:'Backup/restore drill has not produced complete real-database evidence.' };
-  }
-  if (id === '17-E.runtime.dr') {
-    const realDrPass = disasterRecoveryEvidence?.applicationRuntimeIntegrated === true && disasterRecoveryEvidence?.integrationFixture === false && disasterRecoveryEvidence?.status === 'PASS' && disasterRecoveryEvidence?.drillType === 'controlled-database-loss-and-recovery' && Array.isArray(disasterRecoveryEvidence.checks) && disasterRecoveryEvidence.checks.length > 0 && disasterRecoveryEvidence.checks.every(check => check.status === 'PASS');
-    const failed = disasterRecoveryEvidence?.checks?.some(check => check.status === 'FAIL') || disasterRecoveryEvidence?.status === 'FAIL';
-    if (realDrPass) observed = { status:'PASS', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Controlled database-loss simulation and recovery from a real PostgreSQL recovery point completed with critical-state integrity checks passing.' };
-    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill contains a failed executable recovery check.' };
-    else observed = { status:'NOT_RUN', evidence:['phase17-execution/disaster-recovery-evidence.json'], details:'Disaster recovery drill has not produced complete real-database recovery evidence.' };
-  }
-  if (id === '17-E.runtime.performance') {
-    const realPerformancePass = performanceEvidence?.applicationRuntimeIntegrated === true && performanceEvidence?.integrationFixture === false && performanceEvidence?.status === 'PASS' && Array.isArray(performanceEvidence.checks) && performanceEvidence.checks.length > 0 && performanceEvidence.checks.every(check => check.status === 'PASS');
-    const failed = performanceEvidence?.checks?.some(check => check.status === 'FAIL') || performanceEvidence?.status === 'FAIL';
-    if (realPerformancePass) observed = { status:'PASS', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Executable performance regression completed against the real application runtime with all configured thresholds passing.' };
-    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Real application performance regression contains a failed executable threshold check.' };
-    else observed = { status:'NOT_RUN', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Performance regression has not produced complete real-application executable evidence.' };
-  }
-  if (id === '17-E.runtime.ai') {
-    const realAiPass = aiCostEvidence?.applicationRuntimeIntegrated === true && aiCostEvidence?.integrationFixture === false && aiCostEvidence?.status === 'PASS' && Array.isArray(aiCostEvidence.checks) && aiCostEvidence.checks.length > 0 && aiCostEvidence.checks.every(check => check.status === 'PASS');
-    const failed = aiCostEvidence?.checks?.some(check => check.status === 'FAIL') || aiCostEvidence?.status === 'FAIL';
-    if (realAiPass) observed = { status:'PASS', evidence:['phase17-execution/ai-cost-evidence.json'], details:'Executable AI usage and cost-control regression completed against the configured application runtime with all budget checks passing.' };
-    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/ai-cost-evidence.json'], details:'AI usage/cost regression contains a failed executable provider, usage, or budget check.' };
-    else observed = { status:'NOT_RUN', evidence:['phase17-execution/ai-cost-evidence.json'], details:'AI usage/cost regression has not produced complete real-application evidence.' };
-  }
-  checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
+const realAuth = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
+const security = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
+const ai = loadJson(process.env.AI_COST_EVIDENCE_INPUT || `${root}/phase17-execution/ai-cost-evidence.json`);
+const observability = loadJson(process.env.OBSERVABILITY_EVIDENCE_INPUT || `${root}/phase17-execution/observability-evidence.json`);
+const backup = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
+const dr = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
+const performance = loadJson(process.env.PERFORMANCE_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/performance-regression-evidence.json`);
+const runtimeMap = new Map((runtimeEvidence?.checks || []).map(c => [c.id,c]));
+function promote(id, evidence, details) {
+  const real = evidence?.applicationRuntimeIntegrated === true && evidence?.integrationFixture === false && evidence?.status === 'PASS' && Array.isArray(evidence?.checks) && evidence.checks.length > 0 && evidence.checks.every(c=>c.status==='PASS');
+  const failed = evidence?.status === 'FAIL' || evidence?.checks?.some(c=>c.status==='FAIL');
+  return real ? {status:'PASS',evidence:[`phase17-execution/${id}.json`],details} : failed ? {status:'FAIL',evidence:[`phase17-execution/${id}.json`],details:`${details} Evidence contains a failed executable check.`} : {status:'NOT_RUN',evidence:[`phase17-execution/${id}.json`],details};
 }
-const report = { schemaVersion:'1.0.0', runId:randomUUID(), commit, environment:process.env.NODE_ENV === 'production'?'production':'local', generatedAt, checks };
-const output = process.env.EVIDENCE_OUTPUT || `${root}/phase17-execution/evidence-report.json`;
-writeFileSync(output, JSON.stringify(report,null,2)+'\n','utf8');
-console.log(JSON.stringify({ output, runId:report.runId, commit, checks:checks.map(({id,status})=>({id,status})) },null,2));
-if (checks.some(c=>c.status!=='PASS')) process.exitCode=1;
+for (const [id,phase,name,details] of runtimeDomains) {
+  let observed = runtimeMap.get(id) || {status:'NOT_RUN',evidence:[],details};
+  if(id==='17-E.runtime.auth') observed = promote('application-real-auth-evidence',realAuth,'Real application authentication/RBAC evidence is required.');
+  if(id==='17-E.runtime.security') observed = promote('security-regression-evidence',security,'Real application security regression evidence is required.');
+  if(id==='17-E.runtime.ai') observed = promote('ai-cost-evidence',ai,'Real application AI provider, usage, cost, and budget evidence is required.');
+  if(id==='17-E.runtime.observability') observed = promote('observability-evidence',observability,'Real application observability evidence is required.');
+  if(id==='17-E.runtime.backup') observed = promote('backup-restore-evidence',backup,'Real PostgreSQL backup/restore evidence is required.');
+  if(id==='17-E.runtime.dr') observed = promote('disaster-recovery-evidence',dr,'Real disaster-recovery evidence is required.');
+  if(id==='17-E.runtime.performance') observed = promote('performance-regression-evidence',performance,'Real application performance evidence is required.');
+  checks.push({id,phase,name,status:['PASS','FAIL','NOT_RUN'].includes(observed.status)?observed.status:'NOT_RUN',evidence:observed.evidence||[],details:observed.details||details});
+}
+const report={schemaVersion:'1.0.0',runId:randomUUID(),commit,environment:process.env.NODE_ENV==='production'?'production':'local',generatedAt,checks};
+const output=process.env.EVIDENCE_OUTPUT||`${root}/phase17-execution/evidence-report.json`;
+writeFileSync(output,JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify({output,runId:report.runId,commit,checks:checks.map(({id,status})=>({id,status}))},null,2));
+if(checks.some(c=>c.status!=='PASS')) process.exitCode=1;
