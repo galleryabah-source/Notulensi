@@ -21,3 +21,4 @@ jobs:
           cache-dependency-path: backend/package.json
       - run: npm install
       - run: npm run check
+      - run: npm test
