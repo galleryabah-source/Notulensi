@@ -54,10 +54,21 @@ function loadRuntimeEvidence() {
     return new Map();
   }
 }
+function loadAuthBoundaryEvidence() {
+  const path = process.env.AUTH_BOUNDARY_EVIDENCE_INPUT || `${root}/phase17-execution/auth-boundary-evidence.json`;
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    console.warn(`Auth boundary evidence could not be parsed: ${error.message}`);
+    return null;
+  }
+}
 
 const commit = git(['rev-parse','HEAD']);
 const generatedAt = new Date().toISOString();
 const runtimeEvidence = loadRuntimeEvidence();
+const authBoundaryEvidence = loadAuthBoundaryEvidence();
 const checks = required.map(([phase, path]) => {
   const result = checkFile(path);
   return { id: `17-E.static.${phase}`, phase, name: `Phase ${phase} artifact integrity`, ...result };
@@ -67,7 +78,9 @@ checks.push({
 });
 
 for (const [id, phase, name, details] of runtimeDomains) {
-  const observed = runtimeEvidence.get(id);
+  const observed = id === '17-E.runtime.auth' && authBoundaryEvidence
+    ? authBoundaryEvidence
+    : runtimeEvidence.get(id);
   if (observed && ['PASS', 'FAIL', 'NOT_RUN'].includes(observed.status)) {
     checks.push({
       id,
