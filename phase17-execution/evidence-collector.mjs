@@ -24,6 +24,7 @@ const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVID
 const backupRestoreEvidence = loadJson(process.env.BACKUP_RESTORE_EVIDENCE_INPUT || `${root}/phase17-execution/backup-restore-evidence.json`);
 const disasterRecoveryEvidence = loadJson(process.env.DR_EVIDENCE_INPUT || `${root}/phase17-execution/disaster-recovery-evidence.json`);
 const performanceEvidence = loadJson(process.env.PERFORMANCE_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/performance-regression-evidence.json`);
+const aiCostEvidence = loadJson(process.env.AI_COST_EVIDENCE_INPUT || `${root}/phase17-execution/ai-cost-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
@@ -65,6 +66,13 @@ for (const [id,phase,name,details] of runtimeDomains) {
     if (realPerformancePass) observed = { status:'PASS', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Executable performance regression completed against the real application runtime with all configured thresholds passing.' };
     else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Real application performance regression contains a failed executable threshold check.' };
     else observed = { status:'NOT_RUN', evidence:['phase17-execution/performance-regression-evidence.json'], details:'Performance regression has not produced complete real-application executable evidence.' };
+  }
+  if (id === '17-E.runtime.ai') {
+    const realAiPass = aiCostEvidence?.applicationRuntimeIntegrated === true && aiCostEvidence?.integrationFixture === false && aiCostEvidence?.status === 'PASS' && Array.isArray(aiCostEvidence.checks) && aiCostEvidence.checks.length > 0 && aiCostEvidence.checks.every(check => check.status === 'PASS');
+    const failed = aiCostEvidence?.checks?.some(check => check.status === 'FAIL') || aiCostEvidence?.status === 'FAIL';
+    if (realAiPass) observed = { status:'PASS', evidence:['phase17-execution/ai-cost-evidence.json'], details:'Executable AI usage and cost-control regression completed against the configured application runtime with all budget checks passing.' };
+    else if (failed) observed = { status:'FAIL', evidence:['phase17-execution/ai-cost-evidence.json'], details:'AI usage/cost regression contains a failed executable provider, usage, or budget check.' };
+    else observed = { status:'NOT_RUN', evidence:['phase17-execution/ai-cost-evidence.json'], details:'AI usage/cost regression has not produced complete real-application evidence.' };
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
 }
