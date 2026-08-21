@@ -20,6 +20,7 @@ const authBoundaryEvidence = loadJson(process.env.AUTH_BOUNDARY_EVIDENCE_INPUT |
 const applicationAuthEvidence = loadJson(process.env.APPLICATION_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-auth-evidence.json`);
 const applicationAuthIntegration = loadJson(process.env.APPLICATION_AUTH_INTEGRATION_INPUT || `${root}/phase17-execution/application-auth-integration.json`);
 const applicationRealAuthEvidence = loadJson(process.env.APPLICATION_REAL_AUTH_EVIDENCE_INPUT || `${root}/phase17-execution/application-real-auth-evidence.json`);
+const securityRegressionEvidence = loadJson(process.env.SECURITY_REGRESSION_EVIDENCE_INPUT || `${root}/phase17-execution/security-regression-evidence.json`);
 const checks = required.map(([phase,path]) => ({ id:`17-E.static.${phase}`, phase, name:`Phase ${phase} artifact integrity`, ...checkFile(path) }));
 checks.push({ id:'17-E.static.git', phase:'17-E', name:'Git commit identity', status:/^[0-9a-f]{40}$/.test(commit)?'PASS':'FAIL', evidence:['git rev-parse HEAD'], details:commit });
 for (const [id,phase,name,details] of runtimeDomains) {
@@ -38,6 +39,17 @@ for (const [id,phase,name,details] of runtimeDomains) {
       observed = applicationAuthIntegration;
     } else {
       observed = { status:'NOT_RUN', evidence:[...(authBoundaryEvidence?.evidence || []),'phase17-execution/application-auth-evidence.json','phase17-execution/application-auth-integration.json','phase17-execution/application-real-auth-evidence.json'], details:applicationRealAuthEvidence?.details || applicationAuthIntegration?.details || applicationAuthEvidence?.details || authBoundaryEvidence?.details || details };
+    }
+  }
+  if (id === '17-E.runtime.security') {
+    const realSecurityPass = securityRegressionEvidence?.applicationRuntimeIntegrated === true && securityRegressionEvidence?.integrationFixture === false && Array.isArray(securityRegressionEvidence.checks) && securityRegressionEvidence.checks.length > 0 && securityRegressionEvidence.checks.every(check => check.status === 'PASS');
+    const failed = securityRegressionEvidence?.checks?.some(check => check.status === 'FAIL');
+    if (realSecurityPass) {
+      observed = { status:'PASS', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real Meeting Intelligence runtime security regression completed with every executable security boundary check passing.' };
+    } else if (failed) {
+      observed = { status:'FAIL', evidence:['phase17-execution/security-regression-evidence.json'], details:'Real application runtime security regression contains a failed executable security check.' };
+    } else {
+      observed = { status:'NOT_RUN', evidence:['phase17-execution/security-regression-evidence.json'], details:'Security regression has not produced complete real-application executable evidence.' };
     }
   }
   checks.push({ id, phase, name, status:['PASS','FAIL','NOT_RUN'].includes(observed?.status) ? observed.status : 'NOT_RUN', evidence:Array.isArray(observed?.evidence)?observed.evidence:[], details:observed?.details || details });
