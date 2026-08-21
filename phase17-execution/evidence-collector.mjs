@@ -43,9 +43,21 @@ function checkFile(path) {
   if (!text.trim()) return { status: 'FAIL', evidence: [], details: `Empty artifact: ${path}` };
   return { status: 'PASS', evidence: [path], details: `Artifact exists and is non-empty (${text.length} bytes).` };
 }
+function loadRuntimeEvidence() {
+  const path = process.env.RUNTIME_EVIDENCE_INPUT || `${root}/phase17-execution/runtime-evidence.json`;
+  if (!existsSync(path)) return new Map();
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return new Map((parsed.checks || []).map((check) => [check.id, check]));
+  } catch (error) {
+    console.warn(`Runtime evidence could not be parsed: ${error.message}`);
+    return new Map();
+  }
+}
 
 const commit = git(['rev-parse','HEAD']);
 const generatedAt = new Date().toISOString();
+const runtimeEvidence = loadRuntimeEvidence();
 const checks = required.map(([phase, path]) => {
   const result = checkFile(path);
   return { id: `17-E.static.${phase}`, phase, name: `Phase ${phase} artifact integrity`, ...result };
@@ -54,10 +66,20 @@ checks.push({
   id: '17-E.static.git', phase: '17-E', name: 'Git commit identity', status: /^[0-9a-f]{40}$/.test(commit) ? 'PASS' : 'FAIL', evidence: ['git rev-parse HEAD'], details: commit
 });
 
-// Runtime domains are deliberately NOT_RUN until a real execution harness supplies evidence.
-// This prevents a source-only CI run from being misclassified as production-ready.
 for (const [id, phase, name, details] of runtimeDomains) {
-  checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
+  const observed = runtimeEvidence.get(id);
+  if (observed && ['PASS', 'FAIL', 'NOT_RUN'].includes(observed.status)) {
+    checks.push({
+      id,
+      phase,
+      name,
+      status: observed.status,
+      evidence: Array.isArray(observed.evidence) ? observed.evidence : [],
+      details: observed.details || details
+    });
+  } else {
+    checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
+  }
 }
 
 const report = { schemaVersion:'1.0.0', runId:randomUUID(), commit, environment:process.env.NODE_ENV === 'production' ? 'production' : 'local', generatedAt, checks };
