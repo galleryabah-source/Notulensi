@@ -38,6 +38,11 @@ try {
   let r = await request('GET', '/api/auth/me');
   check('17-E.security.unauthenticated_boundary', 401, r.status, 'Protected session endpoint must reject unauthenticated requests.');
   check('17-E.security.api_no_store', 'no-store', r.headers['cache-control'], 'Authentication responses must not be cached.');
+  check('17-E.security.api_nosniff', 'nosniff', r.headers['x-content-type-options'], 'API responses must disable MIME sniffing.');
+
+  r = await request('GET', '/meeting-intelligence-app-phase4.3-integrated-safe.html');
+  check('17-E.security.html_nosniff', 'nosniff', r.headers['x-content-type-options'], 'Application HTML must disable MIME sniffing.');
+  check('17-E.security.html_referrer_policy', 'no-referrer', r.headers['referrer-policy'], 'Application HTML must restrict referrer disclosure.');
 
   r = await request('POST', '/api/auth/login', { username: 'viewer-a', password: 'wrong' });
   check('17-E.security.invalid_credentials', 401, r.status, 'Invalid credentials must not authenticate.');
@@ -72,7 +77,7 @@ try {
   check('17-E.security.direct_api_access', 401, r.status, 'Direct protected API access without a session must remain denied.');
 
   r = await request('GET', '/%2e%2e/%2e%2e/phase17-execution/runtime-harness.mjs');
-  check('17-E.security.path_traversal_boundary', 404, r.status, 'Encoded traversal must not expose repository files outside the intended runtime resource.');
+  check('17-E.security.path_traversal_boundary', 403, r.status, 'Encoded traversal must be rejected before filesystem normalization.');
 
   r = await request('POST', '/api/auth/logout', undefined, cookie);
   check('17-E.security.logout', 200, r.status, 'Logout must invalidate the active session.');
