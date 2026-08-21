@@ -1,7 +1,9 @@
+import { writeFileSync } from 'node:fs';
 import http from 'node:http';
 
 const baseUrl = process.env.APPLICATION_SERVER_BASE_URL || 'http://127.0.0.1:4190';
 const ttlMs = Number(process.env.APPLICATION_SESSION_TTL_MS || 300000);
+const output = process.env.APPLICATION_AUTH_EVIDENCE_OUTPUT || 'phase17-execution/application-auth-evidence.json';
 
 function request(method, path, body, cookie) {
   return new Promise((resolve, reject) => {
@@ -10,7 +12,10 @@ function request(method, path, body, cookie) {
     const req = http.request(url, { method, headers: { ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}), ...(cookie ? { cookie } : {}) } }, res => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data ? JSON.parse(data) : {} }));
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, headers: res.headers, body: data ? JSON.parse(data) : {} }); }
+        catch (error) { reject(error); }
+      });
     });
     req.on('error', reject);
     if (payload) req.write(payload);
@@ -74,7 +79,9 @@ const report = {
   generatedAt: new Date().toISOString(),
   applicationRuntimeIntegrated: false,
   integrationFixture: true,
+  baseUrl,
   checks
 };
+writeFileSync(output, JSON.stringify(report, null, 2) + '\n', 'utf8');
 console.log(JSON.stringify(report, null, 2));
 process.exitCode = checks.some(check => check.status !== 'PASS') ? 1 : 0;
