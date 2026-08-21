@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase17-execution-evidence
+      - phase17-e10-runtime-harness
   pull_request:
     branches:
       - phase17-execution-evidence
@@ -95,8 +96,9 @@ jobs:
           set -euo pipefail
           nohup node phase17-execution/auth-integration-server.mjs > /tmp/phase17-auth.log 2>&1 &
           for attempt in $(seq 1 20); do
-            if curl -fsS --max-time 2 "$AUTH_INTEGRATION_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' | grep -q '^401$'; then
-              echo "Authentication integration fixture is ready"
+            status="$(curl -sS --max-time 2 "$AUTH_INTEGRATION_BASE_URL/api/auth/me" -o /dev/null -w '%{http_code}' || true)"
+            if [ "$status" = "401" ]; then
+              echo "Authentication integration fixture is ready (expected unauthenticated 401)"
               exit 0
             fi
             sleep 1
