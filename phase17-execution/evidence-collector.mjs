@@ -43,6 +43,19 @@ function checkFile(path) {
   if (!text.trim()) return { status: 'FAIL', evidence: [], details: `Empty artifact: ${path}` };
   return { status: 'PASS', evidence: [path], details: `Artifact exists and is non-empty (${text.length} bytes).` };
 }
+function runtimeCheckFromFile(path, id, phase, name, fallbackDetails) {
+  const absolute = `${root}/${path}`;
+  if (!existsSync(absolute)) return { id, phase, name, status: 'NOT_RUN', evidence: [], details: fallbackDetails };
+  try {
+    const value = JSON.parse(readFileSync(absolute, 'utf8'));
+    if (value.status === 'PASS') {
+      return { id, phase, name, status: 'PASS', evidence: [path], details: `Runtime harness passed: ${value.target || path}.` };
+    }
+    return { id, phase, name, status: 'FAIL', evidence: [path], details: `Runtime harness reported ${value.status || 'unknown'} status.` };
+  } catch (error) {
+    return { id, phase, name, status: 'FAIL', evidence: [path], details: `Invalid runtime evidence: ${error.message}` };
+  }
+}
 
 const commit = git(['rev-parse','HEAD']);
 const generatedAt = new Date().toISOString();
@@ -54,10 +67,12 @@ checks.push({
   id: '17-E.static.git', phase: '17-E', name: 'Git commit identity', status: /^[0-9a-f]{40}$/.test(commit) ? 'PASS' : 'FAIL', evidence: ['git rev-parse HEAD'], details: commit
 });
 
-// Runtime domains are deliberately NOT_RUN until a real execution harness supplies evidence.
-// This prevents a source-only CI run from being misclassified as production-ready.
 for (const [id, phase, name, details] of runtimeDomains) {
-  checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
+  if (id === '17-E.runtime.health') {
+    checks.push(runtimeCheckFromFile('phase17-execution/runtime-health.json', id, phase, name, details));
+  } else {
+    checks.push({ id, phase, name, status: 'NOT_RUN', evidence: [], details });
+  }
 }
 
 const report = { schemaVersion:'1.0.0', runId:randomUUID(), commit, environment:process.env.NODE_ENV === 'production' ? 'production' : 'local', generatedAt, checks };
