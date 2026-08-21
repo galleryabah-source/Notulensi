@@ -44,6 +44,7 @@ jobs:
       AUTH_RUNTIME_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/auth-runtime-evidence.json
       AUTH_INTEGRATION_BASE_URL: http://127.0.0.1:4180
       AUTH_INTEGRATION_PORT: 4180
+      AUTH_SESSION_TTL_MS: 1000
       RUNTIME_BASE_URL: http://127.0.0.1:4173
       RUNTIME_APP_PATH: /meeting-intelligence-app-phase4.3-integrated-safe.html
       PGHOST: 127.0.0.1
