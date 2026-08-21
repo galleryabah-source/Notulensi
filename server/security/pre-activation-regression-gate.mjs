@@ -7,6 +7,8 @@ const tests = [
   'server/security/protected-route-registry.self-test.mjs',
   'server/security/security-audit-event.self-test.mjs',
   'server/security/endpoint-integration-readiness.self-test.mjs',
+  'server/security/pilot-verification-evidence.self-test.mjs',
+  'server/security/live-postgres-verification.self-test.mjs',
 ];
 
 for (const test of tests) {
@@ -21,4 +23,4 @@ for (const test of tests) {
   }
 }
 
-console.log('Phase 4.36 pre-activation regression gate: PASS');
+console.log('Phase 4.38 pre-activation regression gate: PASS');
