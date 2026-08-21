@@ -18,12 +18,34 @@ concurrency:
 
 jobs:
   evidence:
-    name: Static validation and evidence collection
+    name: Runtime harness and production readiness evidence
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: phase17_runtime
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d phase17_runtime"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
     env:
       NODE_ENV: test
       EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/evidence-report.json
+      RUNTIME_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/runtime-evidence.json
+      RUNTIME_BASE_URL: http://127.0.0.1:4173
+      RUNTIME_APP_PATH: /meeting-intelligence-app-phase4.3-integrated-safe.html
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: phase17_runtime
 
     steps:
       - name: Checkout exact revision
@@ -56,6 +78,31 @@ jobs:
             node --check "$file"
           done
 
+      - name: Start application runtime harness server
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/phase17-http.log 2>&1 &
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 2 "$RUNTIME_BASE_URL$RUNTIME_APP_PATH" > /dev/null; then
+              echo "Application runtime server is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/phase17-http.log || true
+          exit 1
+
+      - name: Run runtime harness
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          node phase17-execution/runtime-harness.mjs
+          status=$?
+          set -e
+          test "$status" -eq 0 || echo "Runtime harness returned status $status; evidence will be fail-closed."
+
       - name: Run evidence collector
         shell: bash
         continue-on-error: true
@@ -70,7 +117,7 @@ jobs:
           status=$?
           set -e
           cat phase17-execution/readiness-result.json
-          # NO-GO is an expected evidence outcome while runtime evidence is absent.
+          # NO-GO remains an expected evidence outcome while higher runtime domains are absent.
           # The CI job remains successful so the evidence artifact can be inspected.
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
             exit "$status"
@@ -94,6 +141,7 @@ jobs:
         with:
           name: phase17-evidence-${{ github.sha }}
           path: |
+            phase17-execution/runtime-evidence.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
             phase17-execution/blockers.json
