@@ -116,21 +116,6 @@ jobs:
           set -e
           test "$status" -eq 0 || echo "Isolated auth integration harness failed; production readiness remains fail-closed."
 
-      - name: Run isolated authentication/RBAC boundary harness
-        shell: bash
-        continue-on-error: true
-        run: |
-          set +e
-          if [ -f phase17-execution/auth-runtime-harness.mjs ]; then
-            node phase17-execution/auth-runtime-harness.mjs
-            status=$?
-          else
-            status=0
-            echo "Legacy isolated auth boundary harness not present; integration fixture is the active harness."
-          fi
-          set -e
-          test "$status" -eq 0 || echo "Isolated auth boundary harness returned status $status. This is not application-runtime evidence."
-
       - name: Start application runtime harness server
         shell: bash
         run: |
