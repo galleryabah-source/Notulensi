@@ -1,0 +1,78 @@
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import jwt from 'jsonwebtoken';
+import pg from 'pg';
+import { readFileSync, writeFileSync } from 'node:fs';
+
+const { Pool } = pg;
+const root = process.cwd();
+const port = Number(process.env.R2_2_PORT || 4182);
+const base = `http://127.0.0.1:${port}`;
+const secret = process.env.JWT_SECRET;
+const issuer = process.env.AUTH_ISSUER;
+const audience = process.env.AUTH_AUDIENCE;
+const databaseUrl = process.env.DATABASE_URL;
+const output = `${root}/phase17-execution/r2.2-auth-runtime.json`;
+
+if (!secret || secret.length < 32 || !databaseUrl) throw new Error('R2.2 runtime configuration missing');
+
+const ids = {
+  user: '11111111-1111-4111-8111-111111111111',
+  admin: '22222222-2222-4222-8222-222222222222',
+  inactive: '33333333-3333-4333-8333-333333333333'
+};
+
+const pool = new Pool({ connectionString: databaseUrl });
+const result = { schemaVersion: '1.0.0', runId: randomUUID(), generatedAt: new Date().toISOString(), status: 'FAIL', checks: [] };
+function check(name, passed, details) { result.checks.push({ name, status: passed ? 'PASS' : 'FAIL', details }); }
+function token(sub) { return jwt.sign({ sub }, secret, { algorithm: 'HS256', issuer, audience, expiresIn: '10m' }); }
+
+let server;
+try {
+  const schema = readFileSync(`${root}/server/r2.2-schema.sql`, 'utf8');
+  await pool.query(schema);
+  await pool.query('TRUNCATE users');
+  await pool.query(`INSERT INTO users (id,email,status,role) VALUES
+    ($1,'r2.2-user@example.invalid','active','user'),
+    ($2,'r2.2-admin@example.invalid','active','admin'),
+    ($3,'r2.2-inactive@example.invalid','suspended','admin')`, [ids.user, ids.admin, ids.inactive]);
+
+  server = spawn(process.execPath, ['server/r2.2-auth-runtime.mjs'], { cwd: root, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let ready = false;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try { const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(500) }); if (r.ok) { ready = true; break; } } catch {}
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  check('Runtime becomes reachable', ready, ready ? 'Ephemeral auth runtime returned a successful health response.' : 'Runtime did not become reachable.');
+  if (!ready) throw new Error('runtime_not_ready');
+
+  const unauth = await fetch(`${base}/api/account/me`);
+  check('Unauthenticated request rejected', unauth.status === 401, `HTTP ${unauth.status}`);
+
+  const invalid = await fetch(`${base}/api/account/me`, { headers: { authorization: 'Bearer invalid-token' } });
+  check('Invalid JWT rejected', invalid.status === 401, `HTTP ${invalid.status}`);
+
+  const active = await fetch(`${base}/api/account/me`, { headers: { authorization: `Bearer ${token(ids.user)}` } });
+  const activeBody = await active.json();
+  check('Active identity authenticated', active.status === 200 && activeBody.user?.id === ids.user && activeBody.user?.role === 'user', `HTTP ${active.status}; DB identity=${activeBody.user?.id}; role=${activeBody.user?.role}`);
+
+  const inactive = await fetch(`${base}/api/account/me`, { headers: { authorization: `Bearer ${token(ids.inactive)}` } });
+  check('Inactive account rejected', inactive.status === 401, `HTTP ${inactive.status}`);
+
+  const denied = await fetch(`${base}/api/rbac/admin-check`, { headers: { authorization: `Bearer ${token(ids.user)}` } });
+  check('Non-admin authorization denied', denied.status === 403, `HTTP ${denied.status}`);
+
+  const allowed = await fetch(`${base}/api/rbac/admin-check`, { headers: { authorization: `Bearer ${token(ids.admin)}` } });
+  const allowedBody = await allowed.json();
+  check('Admin authorization allowed', allowed.status === 200 && allowedBody.authorized === true && allowedBody.role === 'admin', `HTTP ${allowed.status}; role=${allowedBody.role}`);
+} catch (error) {
+  check('Harness execution', false, error instanceof Error ? error.message : String(error));
+} finally {
+  if (server) server.kill('SIGTERM');
+  await pool.end();
+}
+
+result.status = result.checks.length > 0 && result.checks.every(c => c.status === 'PASS') ? 'PASS' : 'FAIL';
+writeFileSync(output, JSON.stringify(result, null, 2) + '\n', 'utf8');
+console.log(JSON.stringify(result, null, 2));
+if (result.status !== 'PASS') process.exitCode = 1;
