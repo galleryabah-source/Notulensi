@@ -3,9 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 import pg from 'pg';
 import { z } from 'zod';
+import { authenticateRequest, authenticateOptional } from './auth.js';
 
 const { Pool } = pg;
 const app = express();
@@ -69,16 +69,7 @@ function hashClient(value) {
 }
 
 function auth(req, res, next) {
-  const value = req.get('authorization') || '';
-  if (!value.startsWith('Bearer ')) return res.status(401).json({ error: 'authentication_required' });
-  try {
-    const claims = jwt.verify(value.slice(7), jwtSecret);
-    if (!claims || typeof claims !== 'object' || !claims.sub) throw new Error('invalid_claims');
-    req.user = { id: String(claims.sub), role: claims.role ? String(claims.role) : 'user' };
-    next();
-  } catch {
-    return res.status(401).json({ error: 'invalid_authentication' });
-  }
+  return authenticateRequest(req, res, next, pool);
 }
 
 function audit(req, client, shareId, event, actorId = null, metadata = {}) {
@@ -106,10 +97,22 @@ async function authorizePrivateShare(req, share) {
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ ok: true, service: 'secure-share-backend', phase: '4.8' });
+    res.json({ ok: true, service: 'secure-share-backend', phase: '4.9' });
   } catch {
     res.status(503).json({ ok: false });
   }
+});
+
+app.get('/api/account/me', auth, async (req, res) => {
+  return res.json({
+    user: {
+      id: req.account.id,
+      email: req.account.email,
+      status: req.account.status,
+      role: req.account.role,
+      createdAt: req.account.created_at
+    }
+  });
 });
 
 app.post('/api/shares', auth, async (req, res, next) => {
@@ -192,19 +195,7 @@ app.get('/api/shares/:shareId', resolveLimiter, async (req, res, next) => {
       return res.status(403).json({ error: expired ? 'share_expired' : 'share_access_denied' });
     }
 
-    let authenticatedUser = null;
-    const authHeader = req.get('authorization') || '';
-    if (authHeader.startsWith('Bearer ')) {
-      try {
-        const claims = jwt.verify(authHeader.slice(7), jwtSecret);
-        if (claims && typeof claims === 'object' && claims.sub) {
-          authenticatedUser = { id: String(claims.sub), role: claims.role ? String(claims.role) : 'user' };
-        }
-      } catch {
-        authenticatedUser = null;
-      }
-    }
-    req.user = authenticatedUser;
+    req.user = await authenticateOptional(req, pool);
 
     if (!share.policy?.allowAnonymousRead && !req.user) {
       await pool.query(
