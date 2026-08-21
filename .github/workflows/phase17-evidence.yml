@@ -44,6 +44,7 @@ jobs:
       AUTH_BOUNDARY_EVIDENCE_INPUT: ${{ github.workspace }}/phase17-execution/auth-boundary-evidence.json
       AUTH_RUNTIME_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/auth-runtime-evidence.json
       APPLICATION_AUTH_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/application-auth-evidence.json
+      APPLICATION_AUTH_INTEGRATION_OUTPUT: ${{ github.workspace }}/phase17-execution/application-auth-integration.json
       AUTH_INTEGRATION_BASE_URL: http://127.0.0.1:4180
       AUTH_INTEGRATION_PORT: 4180
       AUTH_SESSION_TTL_MS: 1000
@@ -146,6 +147,11 @@ jobs:
           set -e
           test "$status" -eq 0 || echo "Application auth boundary harness failed; readiness remains fail-closed."
 
+      - name: Run real application authentication integration gate
+        shell: bash
+        run: |
+          node phase17-execution/application-auth-integration-gate.mjs
+
       - name: Start application runtime harness server
         shell: bash
         run: |
@@ -210,6 +216,7 @@ jobs:
             phase17-execution/auth-boundary-evidence.json
             phase17-execution/auth-runtime-evidence.json
             phase17-execution/application-auth-evidence.json
+            phase17-execution/application-auth-integration.json
             phase17-execution/runtime-evidence.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
