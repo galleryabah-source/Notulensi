@@ -10,6 +10,8 @@ const port = Number(process.env.TEST_PORT || 8099);
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5432/meeting_intelligence_test';
 const jwtSecret = process.env.JWT_SECRET || 'integration-test-jwt-secret-01234567890123456789';
 const tokenPepper = process.env.SHARE_TOKEN_PEPPER || 'integration-test-share-pepper-01234567890123456789';
+const issuer = 'meeting-intelligence-integration';
+const audience = 'meeting-intelligence-api';
 
 let client;
 let server;
@@ -22,7 +24,21 @@ async function request(path, options = {}) {
 }
 
 function authFor(id = userId, role = 'user') {
-  return `Bearer ${jwt.sign({ sub: id, role }, jwtSecret)}`;
+  return `Bearer ${jwt.sign({ sub: id, role }, jwtSecret, {
+    algorithm: 'HS256',
+    issuer,
+    audience,
+    expiresIn: '10m'
+  })}`;
+}
+
+function authWithoutRole(id = userId) {
+  return `Bearer ${jwt.sign({ sub: id }, jwtSecret, {
+    algorithm: 'HS256',
+    issuer,
+    audience,
+    expiresIn: '10m'
+  })}`;
 }
 
 before(async () => {
@@ -31,10 +47,18 @@ before(async () => {
   await client.query(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
 
   const seeded = await client.query(
-    `INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET status='active' RETURNING id`,
+    `INSERT INTO users (email, role) VALUES ($1, 'user')
+     ON CONFLICT (email) DO UPDATE SET status='active', role='user'
+     RETURNING id`,
     ['integration@example.test']
   );
   userId = seeded.rows[0].id;
+
+  await client.query(
+    `INSERT INTO users (id, email, role) VALUES
+      ('00000000-0000-0000-0000-000000000001', 'attacker@example.test', 'user')
+     ON CONFLICT (id) DO UPDATE SET status='active', role='user'`
+  );
 
   await client.query('DELETE FROM document_shares WHERE owner_id=$1', [userId]);
   await client.query('DELETE FROM documents WHERE owner_id=$1', [userId]);
@@ -45,7 +69,8 @@ before(async () => {
   );
   await client.query(
     `INSERT INTO document_revisions (id, document_id, revision_number, content_hash, content, source_transcript_hash, source_analysis_hash)
-     VALUES ('rev-integration', 'doc-integration', 1, 'hash-v1', 'Integration revision v1', 'transcript-v1', 'analysis-v1')`
+     VALUES ('rev-integration', 'doc-integration', 1, 'hash-v1', 'Integration revision v1', 'transcript-v1', 'analysis-v1')
+     ON CONFLICT (id) DO NOTHING`
   );
   await client.query(`UPDATE documents SET current_revision_id='rev-integration' WHERE id='doc-integration'`);
 
@@ -57,6 +82,8 @@ before(async () => {
       DATABASE_URL: databaseUrl,
       JWT_SECRET: jwtSecret,
       SHARE_TOKEN_PEPPER: tokenPepper,
+      AUTH_ISSUER: issuer,
+      AUTH_AUDIENCE: audience,
       DATABASE_SSL: 'false',
       CORS_ORIGIN: 'http://127.0.0.1:3000',
       RESOLVE_RATE_LIMIT: '1000'
@@ -87,6 +114,7 @@ after(async () => {
   if (server) server.kill('SIGTERM');
   if (client) {
     await client.query("DELETE FROM documents WHERE id='doc-integration'").catch(() => {});
+    await client.query("DELETE FROM users WHERE email='attacker@example.test'").catch(() => {});
     await client.end();
   }
 });
@@ -102,6 +130,22 @@ test('authentication and ownership boundaries are enforced', async () => {
     body: JSON.stringify({ documentId: 'doc-integration', revisionId: 'rev-integration', visibility: 'unlisted' })
   });
   assert.equal(crossOwner.status, 403);
+});
+
+test('JWT role claim cannot elevate a normal database user', async () => {
+  const me = await request('/api/account/me', { headers: { authorization: authFor(userId, 'admin') } });
+  assert.equal(me.status, 200);
+  const body = await me.json();
+  assert.equal(body.user.role, 'user');
+});
+
+test('account endpoint returns the authenticated database identity', async () => {
+  const me = await request('/api/account/me', { headers: { authorization: authWithoutRole() } });
+  assert.equal(me.status, 200);
+  const body = await me.json();
+  assert.equal(body.user.id, userId);
+  assert.equal(body.user.email, 'integration@example.test');
+  assert.equal(body.user.status, 'active');
 });
 
 test('secure share lifecycle: create → resolve → rotate → revoke', async () => {
