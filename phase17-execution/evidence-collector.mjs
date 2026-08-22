@@ -9,7 +9,7 @@ const required = [
 
 const runtimeDomains = [
   ['17-E.runtime.health','runtime','Runtime health','Requires a real application execution environment.','phase17-execution/runtime-health.json'],
-  ['17-E.runtime.database','database','Database behavior','Requires a real database connection and controlled test data.',null],
+  ['17-E.runtime.database','database','Database behavior','Requires a real database connection and controlled test data.','phase17-execution/database-runtime.json'],
   ['17-E.runtime.auth','security','Authentication/RBAC','Requires real authentication and authorization execution.','phase17-execution/r2.2-auth-runtime.json'],
   ['17-E.runtime.security','security','Security regression','Requires executable security tests in a configured environment.',null],
   ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.',null],
