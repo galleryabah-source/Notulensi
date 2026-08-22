@@ -1,11 +1,24 @@
 import express from 'express';
 import pg from 'pg';
+import crypto from 'node:crypto';
 import { authenticateRequest } from './auth.js';
 const {Pool}=pg;const app=express();const port=Number(process.env.R2_2_PORT||4182);const pool=new Pool({connectionString:process.env.DATABASE_URL});
 app.use(express.json());
+const allowedOrigin=process.env.R2_3_ALLOWED_ORIGIN||'https://allowed.example.invalid';
+app.use((req,res,next)=>{const origin=req.headers.origin;if(origin===allowedOrigin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Credentials','true');}if(req.method==='OPTIONS'){res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type,X-CSRF-Token');return res.sendStatus(origin===allowedOrigin?204:403);}next();});
+const rateBuckets=new Map();
+const rateLimit=(limit=3,windowMs=1000)=>(req,res,next)=>{const key=`${req.ip}:${req.path}`;const now=Date.now();const bucket=rateBuckets.get(key)||{count:0,start:now};if(now-bucket.start>=windowMs){bucket.count=0;bucket.start=now;}bucket.count+=1;rateBuckets.set(key,bucket);if(bucket.count>limit)return res.status(429).json({error:'rate_limit_exceeded'});next();};
 app.get('/health',async(_req,res)=>{try{await pool.query('SELECT 1');res.json({ok:true,service:'phase17-r2.2-auth-runtime'});}catch{res.status(503).json({ok:false});}});
 const auth=(req,res,next)=>authenticateRequest(req,res,next,pool);
+const csrf=(req,res,next)=>{const cookie=String(req.headers.cookie||'').match(/(?:^|; )csrf_token=([^;]+)/)?.[1];const header=req.headers['x-csrf-token'];if(!cookie||!header||cookie!==header)return res.status(403).json({error:'csrf_validation_failed'});next();};
+const admin=(req,res,next)=>{if(req.user.role!=='admin')return res.status(403).json({error:'authorization_denied',reason:'admin_role_required'});next();};
 app.get('/api/account/me',auth,(req,res)=>res.json({user:{id:req.account.id,email:req.account.email,status:req.account.status,role:req.account.role}}));
-app.get('/api/rbac/admin-check',auth,(req,res)=>{if(req.user.role!=='admin')return res.status(403).json({error:'authorization_denied',reason:'admin_role_required'});return res.json({authorized:true,role:req.user.role});});
+app.get('/api/rbac/admin-check',auth,admin,(req,res)=>res.json({authorized:true,role:req.user.role}));
+app.post('/api/security/csrf-check',auth,csrf,(req,res)=>res.json({accepted:true}));
+app.get('/api/security/rate-limit',auth,rateLimit(),(_req,res)=>res.json({ok:true}));
+app.get('/api/resources/:id',auth,async(req,res)=>{const q=await pool.query('SELECT id,owner_id,name FROM r2_3_resources WHERE id=$1',[req.params.id]);if(!q.rowCount)return res.status(404).json({error:'not_found'});const resource=q.rows[0];if(req.user.role!=='admin'&&resource.owner_id!==req.account.id)return res.status(403).json({error:'owner_isolation_denied'});res.json({resource});});
+function auditHash(previousHash,actorId,action,payload,createdAt){return crypto.createHash('sha256').update(JSON.stringify({previousHash,actorId,action,payload,createdAt})).digest('hex');}
+app.post('/api/audit/events',auth,admin,async(req,res)=>{const createdAt=new Date().toISOString();const previous=(await pool.query('SELECT entry_hash FROM r2_3_audit_logs ORDER BY id DESC LIMIT 1')).rows[0]?.entry_hash||null;const payload=req.body||{};const entryHash=auditHash(previous,req.account.id,String(payload.action||'test'),payload,createdAt);await pool.query('INSERT INTO r2_3_audit_logs(actor_id,action,payload,previous_hash,entry_hash,created_at) VALUES($1,$2,$3,$4,$5,$6)',[req.account.id,String(payload.action||'test'),payload,previous,entryHash,createdAt]);res.status(201).json({recorded:true});});
+app.get('/api/audit/verify',auth,admin,async(_req,res)=>{const rows=(await pool.query('SELECT id,actor_id,action,payload,previous_hash,entry_hash,created_at FROM r2_3_audit_logs ORDER BY id')).rows;let previous=null;for(const row of rows){const expected=auditHash(previous,row.actor_id,row.action,row.payload,row.created_at.toISOString());if(row.previous_hash!==previous||row.entry_hash!==expected)return res.json({integrity:false,checked:rows.length,failedId:row.id});previous=row.entry_hash;}res.json({integrity:true,checked:rows.length});});
 const server=app.listen(port,'127.0.0.1',()=>console.log(`R2.2 auth runtime listening on http://127.0.0.1:${port}`));
 async function shutdown(){server.close(async()=>{await pool.end();process.exit(0);});}process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);
