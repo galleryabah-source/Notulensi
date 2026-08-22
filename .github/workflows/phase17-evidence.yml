@@ -20,7 +20,7 @@ jobs:
   evidence:
     name: Static validation and evidence collection
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -129,6 +129,31 @@ jobs:
         continue-on-error: true
         run: node phase17-execution/r2.4-ai-cost-runtime-harness.mjs
 
+      - name: Execute observability runtime harness
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/observability-runtime-harness.mjs
+
+      - name: Execute backup and restore runtime drill
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/backup-restore-runtime-harness.mjs
+
+      - name: Execute disaster recovery runtime drill
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/dr-runtime-harness.mjs
+
+      - name: Execute performance and load runtime harness
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/performance-runtime-harness.mjs
+
+      - name: Execute controlled release canary and rollback runtime drill
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/release-runtime-harness.mjs
+
       - name: Run evidence collector
         shell: bash
         continue-on-error: true
@@ -166,6 +191,11 @@ jobs:
             phase17-execution/r2.2-rbac-compatibility.json
             phase17-execution/r2.3-security-runtime.json
             phase17-execution/r2.4-ai-runtime.json
+            phase17-execution/observability-runtime.json
+            phase17-execution/backup-runtime.json
+            phase17-execution/dr-runtime.json
+            phase17-execution/performance-runtime.json
+            phase17-execution/release-runtime.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
             phase17-execution/blockers.json
