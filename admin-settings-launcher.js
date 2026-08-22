@@ -1,7 +1,41 @@
 (function(){
   'use strict';
+  function lockPublicAiSettings(frame){
+    try{
+      const win=frame.contentWindow, doc=frame.contentDocument;
+      if(!win||!doc)return;
+      // Public users must not have a client-side AI/API-key settings surface.
+      try{win.openSettingsModal=function(){return false};}catch{}
+      const styleId='notulensi-public-settings-lock';
+      if(!doc.getElementById(styleId)){
+        const style=doc.createElement('style');
+        style.id=styleId;
+        style.textContent=`
+          /* Remove the public Settings entrypoint and AI-key settings surface. */
+          button[onclick*="openSettingsModal"],
+          [data-public-ai-settings],
+          #settingsModal,
+          #apiSettingsModal,
+          #geminiApiKeyModal { display:none !important; }
+        `;
+        (doc.head||doc.documentElement).appendChild(style);
+      }
+      // The current baseline uses a text-labeled Settings button; remove only that
+      // public entrypoint, never the authenticated Admin launcher in the parent page.
+      for(const el of doc.querySelectorAll('button')){
+        const text=(el.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+        if(text==='⚙️ pengaturan' || text==='pengaturan' || text.includes('pengaturan ai')){
+          el.remove();
+        }
+      }
+    }catch(e){ console.warn('Public AI settings lockdown failed:',e); }
+  }
   function mount(){
     if(document.getElementById('notulensiAdminLauncher'))return;
+    const appFrame=document.getElementById('appFrame');
+    if(appFrame) appFrame.addEventListener('load',()=>lockPublicAiSettings(appFrame),{once:true});
+    if(appFrame && appFrame.contentDocument) lockPublicAiSettings(appFrame);
+
     fetch('./api/admin-session',{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).then(s=>{if(!s||!s.authenticated)return;
       const b=document.createElement('button');b.id='notulensiAdminLauncher';b.type='button';b.textContent='⚙️ Pengaturan Admin';
       Object.assign(b.style,{position:'fixed',left:'14px',bottom:'58px',zIndex:'10000',border:'1px solid #334155',borderRadius:'10px',background:'#0f172a',color:'#e2e8f0',padding:'9px 12px',font:'700 11px system-ui,sans-serif',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.28)'});
