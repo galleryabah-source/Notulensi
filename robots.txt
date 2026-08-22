@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin-settings.html
+Disallow: /seo-settings.html
+Disallow: /admin-login.html
+Disallow: /api/
+Disallow: /phase17-execution/
+Sitemap: https://notulensi-hyr4lr8x3-galleryabah-9636s-projects.vercel.app/sitemap.xml
