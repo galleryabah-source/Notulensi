@@ -12,11 +12,11 @@ const runtimeDomains = [
   ['17-E.runtime.auth','security','Authentication/RBAC','Requires real authentication and authorization execution.','phase17-execution/r2.2-auth-runtime.json'],
   ['17-E.runtime.security','security','Security regression','Requires executable security tests in a configured environment.','phase17-execution/r2.3-security-runtime.json'],
   ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.','phase17-execution/r2.4-ai-runtime.json'],
-  ['17-E.runtime.observability','observability','Observability','Requires real logs/metrics/traces from the running system.',null],
-  ['17-E.runtime.backup','backup','Backup/restore','Requires an actual backup and restore drill.',null],
-  ['17-E.runtime.dr','disaster-recovery','Disaster recovery','Requires an actual DR/failover exercise.',null],
-  ['17-E.runtime.performance','performance','Performance/load','Requires an executable performance test environment.',null],
-  ['17-E.runtime.release','release','Rollback/canary/release','Requires controlled deployment evidence.',null],
+  ['17-E.runtime.observability','observability','Observability','Requires real logs/metrics/traces from the running system.','phase17-execution/observability-runtime.json'],
+  ['17-E.runtime.backup','backup','Backup/restore','Requires an actual backup and restore drill.','phase17-execution/backup-runtime.json'],
+  ['17-E.runtime.dr','disaster-recovery','Disaster recovery','Requires an actual DR/failover exercise.','phase17-execution/dr-runtime.json'],
+  ['17-E.runtime.performance','performance','Performance/load','Requires an executable performance test environment.','phase17-execution/performance-runtime.json'],
+  ['17-E.runtime.release','release','Rollback/canary/release','Requires controlled deployment evidence.','phase17-execution/release-runtime.json'],
 ];
 function git(args) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
 function checkFile(path) {
@@ -27,7 +27,6 @@ function checkFile(path) {
   return { status:'PASS', evidence:[path], details:`Artifact exists and is non-empty (${text.length} bytes).` };
 }
 function runtimeCheckFromFile(path, id, phase, name, fallbackDetails) {
-  if (!path) return { id, phase, name, status:'NOT_RUN', evidence:[], details:fallbackDetails };
   const absolute = `${root}/${path}`;
   if (!existsSync(absolute)) return { id, phase, name, status:'NOT_RUN', evidence:[], details:fallbackDetails };
   try {
