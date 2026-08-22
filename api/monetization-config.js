@@ -21,7 +21,13 @@ const DEFAULT_CONFIG = {
 let pool;
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured.');
-  if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, ssl: process.env.DATABASE_SSL === 'disable' ? false : undefined });
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 2,
+      ssl: process.env.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: false }
+    });
+  }
   return pool;
 }
 
@@ -60,8 +66,10 @@ export default async function handler(req, res) {
     session = requireAdmin(req, res);
     if (!session) return;
   }
-  const client = await db().connect();
+
+  let client;
   try {
+    client = await db().connect();
     await ensureTable(client);
     if (req.method === 'GET') {
       const result = await client.query('SELECT config FROM notulensi_monetization_config WHERE config_key = $1', ['default']);
@@ -74,6 +82,6 @@ export default async function handler(req, res) {
     console.error('monetization-config', error);
     return res.status(503).json({ error: 'Server-side monetization storage is unavailable.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
