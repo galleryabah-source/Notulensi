@@ -118,13 +118,13 @@ jobs:
           set -e
           cat phase17-execution/readiness-result.json
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
-      - name: Run production fidelity gate (fail-closed)
+      - name: Run schema-backed production evidence gate (fail-closed)
         run: |
           set +e
-          node phase17-execution/production-fidelity-gate.mjs > phase17-execution/production-fidelity.json
+          node phase17-execution/production-evidence-gate.mjs > phase17-execution/production-evidence-gate.json
           status=$?
           set -e
-          cat phase17-execution/production-fidelity.json
+          cat phase17-execution/production-evidence-gate.json
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
       - name: Classify blockers
         run: |
@@ -153,7 +153,7 @@ jobs:
             phase17-execution/release-runtime.json
             phase17-execution/evidence-report.json
             phase17-execution/readiness-result.json
-            phase17-execution/production-fidelity.json
+            phase17-execution/production-evidence-gate.json
             phase17-execution/blockers.json
           if-no-files-found: error
           retention-days: 14
