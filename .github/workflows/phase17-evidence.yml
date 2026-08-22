@@ -1,7 +1,7 @@
 name: Phase 17-E Production Readiness Evidence
 on:
   push:
-    branches: [phase17-execution-evidence]
+    branches: [phase17-execution-evidence, phase17-production-evidence-gate]
   pull_request:
     branches: [phase17-execution-evidence]
   workflow_dispatch:
