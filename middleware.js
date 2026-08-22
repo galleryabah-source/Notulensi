@@ -7,13 +7,6 @@ function decodeBase64Url(value) {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
-
 async function validSession(request) {
   const secret = process.env.ADMIN_SESSION_SECRET;
   if (!secret) return false;
@@ -26,8 +19,7 @@ async function validSession(request) {
     const rawBytes = decodeBase64Url(payload);
     const raw = new TextDecoder().decode(rawBytes);
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-    const valid = await crypto.subtle.verify('HMAC', key, decodeBase64Url(signature), rawBytes);
-    if (!valid || !timingSafeEqual(decodeBase64Url(signature), decodeBase64Url(signature))) return false;
+    if (!await crypto.subtle.verify('HMAC', key, decodeBase64Url(signature), rawBytes)) return false;
     const session = JSON.parse(raw);
     return Boolean(session?.exp && session.exp >= Date.now() && ['ADMIN', 'SUPER_ADMIN'].includes(session.role));
   } catch {
