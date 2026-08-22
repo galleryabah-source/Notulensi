@@ -3,33 +3,40 @@
   const KEY='meeting_ai_provider_settings_v1';
   const HEALTH_KEY='meeting_ai_provider_health_v1';
   const OFFLINE_TEXT='API Key belum diisi';
+  const ids=['gemini','groq','openrouter','huggingface','mistral'];
+  const models={gemini:'gemini-2.5-flash',groq:'llama-3.3-70b-versatile',openrouter:'openrouter/free',huggingface:'meta-llama/Llama-3.1-8B-Instruct',mistral:'mistral-small-latest'};
   function read(key){try{return JSON.parse(localStorage.getItem(key)||'{}')}catch(e){return {}}}
   function getState(){
     const cfg=read(KEY), health=read(HEALTH_KEY);
-    const ids=['gemini','groq','openrouter','huggingface','mistral'];
     const healthy=ids.filter(id=>cfg[id]&&cfg[id].key&&health[id]&&health[id].healthy);
     const preferred=cfg.defaultProvider;
     const provider=healthy.includes(preferred)?preferred:(healthy[0]||null);
-    const models={gemini:'gemini-2.5-flash',groq:'llama-3.3-70b-versatile',openrouter:'openrouter/free',huggingface:'meta-llama/Llama-3.1-8B-Instruct',mistral:'mistral-small-latest'};
     return {online:!!provider,provider,model:provider?(cfg[provider].model||models[provider]):null,healthy};
   }
+  function applyBadge(el,s){
+    if(!el)return;
+    const text=s.online?'AI Online · '+s.provider:'AI Offline · '+OFFLINE_TEXT;
+    if(el.textContent!==text)el.textContent=text;
+    el.className=s.online
+      ?'px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+      :'px-3 py-1 text-xs rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20';
+    el.setAttribute('data-ai-runtime-status',s.online?'online':'offline');
+  }
   function syncDashboard(s){
-    const onlineText=s.online?'AI Online · '+s.provider+' · '+s.model:'AI Offline · '+OFFLINE_TEXT;
-    const candidates=document.querySelectorAll('[id], [class]');
-    candidates.forEach(el=>{
-      if(el.id==='aiRuntimeStatus')return;
+    const badge=document.getElementById('apiStatusBadge');
+    applyBadge(badge,s);
+    document.querySelectorAll('[data-ai-status]').forEach(el=>{
+      el.textContent=s.online?'AI Online · '+s.provider:'AI Offline · '+OFFLINE_TEXT;
+      el.style.color=s.online?'#86efac':'#fbbf24';
+    });
+    document.querySelectorAll('[id], [class]').forEach(el=>{
+      if(el===badge||el.id==='aiRuntimeStatus')return;
       const text=(el.textContent||'').trim();
-      if(!text)return;
-      if(text.includes(OFFLINE_TEXT)||text.includes('API Key belum tervalidasi')){
-        el.textContent=onlineText;
+      if(text==='API Key belum diisi'||text==='AI Offline · API Key belum diisi'||text.includes('API Key belum tervalidasi')){
+        el.textContent=s.online?'AI Online · '+s.provider+' · '+s.model:'AI Offline · '+OFFLINE_TEXT;
         el.style.color=s.online?'#86efac':'#fbbf24';
       }
     });
-    const badge=document.getElementById('apiStatusBadge');
-    if(badge){
-      badge.textContent=s.online?'AI Online · '+s.provider:'AI Offline · '+OFFLINE_TEXT;
-      badge.className=s.online?'px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20':'px-3 py-1 text-xs rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20';
-    }
     window.meetingAIStatus=s;
   }
   function render(){
@@ -49,6 +56,12 @@
   window.addEventListener('storage',render);
   window.addEventListener('ai-settings-updated',render);
   window.addEventListener('message',function(e){if(e.data&&e.data.type==='meeting-ai-settings-updated')render()});
+  const observer=new MutationObserver(function(){
+    const s=getState();
+    const badge=document.getElementById('apiStatusBadge');
+    if(badge)applyBadge(badge,s);
+  });
+  observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class']});
   render();
-  setInterval(render,1000);
+  setInterval(render,500);
 })();
