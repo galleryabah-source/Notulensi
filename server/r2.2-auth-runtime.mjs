@@ -21,5 +21,9 @@ function canonicalize(value){if(value===null||typeof value!=='object')return val
 function auditHash(previousHash,actorId,action,payload,createdAt){return crypto.createHash('sha256').update(JSON.stringify({previousHash,actorId,action,payload:canonicalize(payload),createdAt})).digest('hex');}
 app.post('/api/audit/events',auth,admin,async(req,res)=>{const createdAt=new Date().toISOString();const previous=(await pool.query('SELECT entry_hash FROM r2_3_audit_logs ORDER BY id DESC LIMIT 1')).rows[0]?.entry_hash||null;const payload=req.body||{};const entryHash=auditHash(previous,req.account.id,String(payload.action||'test'),payload,createdAt);await pool.query('INSERT INTO r2_3_audit_logs(actor_id,action,payload,previous_hash,entry_hash,created_at) VALUES($1,$2,$3,$4,$5,$6)',[req.account.id,String(payload.action||'test'),payload,previous,entryHash,createdAt]);res.status(201).json({recorded:true});});
 app.get('/api/audit/verify',auth,admin,async(_req,res)=>{const rows=(await pool.query('SELECT id,actor_id,action,payload,previous_hash,entry_hash,created_at FROM r2_3_audit_logs ORDER BY id')).rows;let previous=null;for(const row of rows){const createdAt=row.created_at instanceof Date?row.created_at.toISOString():new Date(row.created_at).toISOString();const expected=auditHash(previous,String(row.actor_id),row.action,row.payload,createdAt);if(row.previous_hash!==previous||row.entry_hash!==expected)return res.json({integrity:false,checked:rows.length,failedId:row.id});previous=row.entry_hash;}res.json({integrity:true,checked:rows.length});});
-const server=app.listen(port,'127.0.0.1',()=>console.log(`R2.2 auth runtime listening on http://127.0.0.1:${port}`));
-async function shutdown(){server.close(async()=>{await pool.end();process.exit(0);});}process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);
+if(process.env.VERCEL!=='1'){
+  const server=app.listen(port,'127.0.0.1',()=>console.log(`R2.2 auth runtime listening on http://127.0.0.1:${port}`));
+  async function shutdown(){server.close(async()=>{await pool.end();process.exit(0);});}
+  process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);
+}
+export default app;
