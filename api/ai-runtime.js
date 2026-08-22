@@ -1,56 +1,27 @@
-import { decrypt, db, ensureTable, readConfig, PROVIDERS, envSecret } from './ai-config.js';
+import { db, ensureTable } from './ai-config.js';
+import { resolveProvider, generate, extractText, smokeTest } from './_ai-provider.js';
 
-async function getProvider(client, id) {
-  const cfg = await readConfig(client);
-  const provider = id || cfg.defaultProvider || 'gemini';
-  const saved = cfg.providers?.[provider];
-  if (!PROVIDERS[provider] || !saved?.key) {
-    return { configured: false, id: provider, meta: PROVIDERS[provider] || null, key: '', model: saved?.model || PROVIDERS[provider]?.model || null };
-  }
-  const key = String(saved.key).startsWith('env:') ? envSecret(provider) : decrypt(saved.key);
-  if (!key) return { configured: false, id: provider, meta: PROVIDERS[provider], key: '', model: saved.model || PROVIDERS[provider].model };
-  return { configured: true, id: provider, meta: PROVIDERS[provider], key, model: saved.model || PROVIDERS[provider].model };
-}
-async function health(p) {
-  if (p.id === 'gemini') return fetch(`${p.meta.testUrl}?key=${encodeURIComponent(p.key)}`);
-  return fetch(p.meta.testUrl, { headers: { Authorization: `Bearer ${p.key}` } });
-}
-async function generate(p, prompt) {
-  if (p.id === 'gemini') {
-    return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(p.model)}:generateContent?key=${encodeURIComponent(p.key)}`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({contents:[{parts:[{text:prompt}]}]}) });
-  }
-  const endpoint = p.id === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : p.id === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' : p.id === 'mistral' ? 'https://api.mistral.ai/v1/chat/completions' : 'https://api-inference.huggingface.co/models/' + encodeURIComponent(p.model);
-  const body = p.id === 'huggingface' ? { inputs: prompt } : { model:p.model, messages:[{role:'user',content:prompt}] };
-  return fetch(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${p.key}`},body:JSON.stringify(body)});
-}
-function extractText(id, data) {
-  if (id === 'gemini') return data?.candidates?.[0]?.content?.parts?.map(x=>x.text||'').join('') || '';
-  if (id === 'huggingface') return Array.isArray(data) ? data.map(x=>x.generated_text||'').join('') : (data?.generated_text||'');
-  return data?.choices?.[0]?.message?.content || '';
-}
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
-  if (!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
-  const client=await db().connect();
+  if(!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
+  let client;
   try{
-    await ensureTable(client);
-    const requestedProvider = req.method === 'GET'
-      ? (typeof req.query?.provider === 'string' ? req.query.provider : null)
-      : req.body?.provider;
-    const p=await getProvider(client, requestedProvider);
+    client=await db().connect(); await ensureTable(client);
+    const requestedProvider=req.method==='GET'?(typeof req.query?.provider==='string'?req.query.provider:null):req.body?.provider;
+    const provider=await resolveProvider(client,requestedProvider);
     if(req.method==='GET'){
-      if(!p.configured) return res.status(200).json({healthy:false,configured:false,provider:p.id,model:p.model,status:0,reason:'AI provider is not configured.'});
-      const r=await health(p);
-      return res.status(200).json({healthy:r.ok,configured:true,provider:p.id,model:p.model,status:r.status,reason:r.ok?null:'Provider health check failed.'});
+      if(!provider.configured)return res.status(200).json({healthy:false,configured:false,provider:provider.id,model:provider.model,status:0,reason:'AI provider is not configured.'});
+      const smoke=await smokeTest(provider);
+      return res.status(200).json({healthy:smoke.healthy,configured:true,provider:provider.id,model:smoke.model||provider.model,status:smoke.status||0,reason:smoke.healthy?null:smoke.error||'AI generation test failed.'});
     }
-    if(!p.configured) return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:p.id,model:p.model});
+    if(!provider.configured)return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:provider.id,model:provider.model});
     const prompt=String(req.body?.prompt||'').trim();
-    if(!prompt || prompt.length>20000) return res.status(400).json({error:'Prompt is required and must be <= 20000 characters.'});
-    const r=await generate(p,prompt); const raw=await r.text(); let data; try{data=JSON.parse(raw)}catch{data={raw}};
-    if(!r.ok) return res.status(r.status>=400&&r.status<600?r.status:502).json({error:'AI provider request failed.',provider:p.id,details:data?.error?.message||data?.error||undefined});
-    const text=extractText(p.id,data);
-    if(!String(text||'').trim()) return res.status(502).json({error:'AI provider returned empty content.',provider:p.id,model:p.model});
-    return res.status(200).json({ok:true,provider:p.id,model:p.model,text,raw:data});
+    if(!prompt||prompt.length>50000)return res.status(400).json({error:'Prompt is required and must be <= 50000 characters.'});
+    const result=await generate(provider,prompt); const raw=await result.response.text(); let data={}; try{data=JSON.parse(raw);}catch{data={raw};}
+    if(!result.response.ok){const detail=data?.error?.message||(typeof data?.error==='string'?data.error:'')||`HTTP ${result.response.status}`;console.error('ai-runtime provider failure',JSON.stringify({provider:provider.id,status:result.response.status,model:result.model,detail:String(detail).slice(0,1000)}));return res.status(502).json({error:'AI provider request failed.',provider:provider.id,model:result.model,status:result.response.status,details:String(detail).slice(0,1000)});}
+    const text=extractText(provider.id,data).trim();
+    if(!text)return res.status(502).json({error:'AI provider returned empty content.',provider:provider.id,model:result.model});
+    return res.status(200).json({ok:true,provider:provider.id,model:result.model,text});
   }catch(error){console.error('ai-runtime',error);return res.status(503).json({error:error.message||'AI runtime unavailable.'});}
-  finally{client.release();}
+  finally{client?.release();}
 }
