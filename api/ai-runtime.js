@@ -1,5 +1,4 @@
 import { decrypt, db, ensureTable, readConfig, PROVIDERS } from './ai-config.js';
-import { requireAdmin } from './_admin-auth.js';
 
 async function getProvider(client, id) {
   const cfg = await readConfig(client);
@@ -28,13 +27,16 @@ function extractText(id, data) {
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
   if (!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
-  if (req.method === 'GET') { const session=requireAdmin(req,res); if(!session)return; }
   const client=await db().connect();
   try{
     await ensureTable(client);
     const p=await getProvider(client, req.body?.provider);
     if(req.method==='GET'){
-      const r=await health(p); return res.status(200).json({healthy:r.ok,provider:p.id,model:p.model,status:r.status});
+      const r=await health(p);
+      // Public health metadata is intentionally non-secret. The provider key
+      // is never returned to the browser; only availability/provider/model/status
+      // are exposed so the public UI can accurately show AI connectivity.
+      return res.status(200).json({healthy:r.ok,provider:p.id,model:p.model,status:r.status});
     }
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt || prompt.length>20000) return res.status(400).json({error:'Prompt is required and must be <= 20000 characters.'});
