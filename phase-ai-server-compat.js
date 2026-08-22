@@ -1,8 +1,4 @@
-/* Server AI compatibility layer for the legacy Meeting Intelligence engine.
- * The original engine still guards on a browser Gemini key and calls Gemini directly.
- * This layer keeps that legacy engine/template intact while transparently routing
- * its generateContent calls to the authenticated server AI runtime.
- */
+/* Server AI compatibility layer for the legacy Meeting Intelligence engine. */
 (function(){
   'use strict';
   const SETTINGS_KEY='meeting_ai_settings';
@@ -36,16 +32,16 @@
     installed=true;
     try{
       const current=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');
-      if(!String(current.apiKey||'').trim()){
-        current.apiKey=SERVER_KEY;
-        localStorage.setItem(SETTINGS_KEY,JSON.stringify(current));
-        if(typeof window.loadSettings==='function')window.loadSettings();
-      }
+      current.apiKey=SERVER_KEY;
+      localStorage.setItem(SETTINGS_KEY,JSON.stringify(current));
+      if(typeof window.loadSettings==='function')window.loadSettings();
     }catch(e){console.warn('server AI compatibility settings:',e)}
     window.fetch=routedFetch;
     const badge=document.getElementById('apiStatusBadge');
     if(badge){badge.textContent='AI Online · Server Gemini';badge.className='px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}
-    try{const r=await originalFetch('./api/ai-runtime',{cache:'no-store'});const d=await r.json();if(!d.healthy){console.warn('Server AI is not healthy:',d)}}catch(e){console.warn('Server AI health check failed:',e)}
+    const keyField=document.getElementById('customApiKey');if(keyField){keyField.value='';const row=keyField.closest('label');if(row)row.style.display='none'}
+    const settingsButton=Array.from(document.querySelectorAll('button')).find(b=>/⚙️\s*Pengaturan|Pengaturan/.test(b.textContent||''));if(settingsButton)settingsButton.style.display='none';
+    try{const r=await originalFetch('./api/ai-runtime',{cache:'no-store'});const d=await r.json();if(!d.healthy)console.warn('Server AI is not healthy:',d)}catch(e){console.warn('Server AI health check failed:',e)}
   }
   window.notulensiServerAICompat={activate,serverGenerate};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(activate,100),{once:true});else setTimeout(activate,100);
