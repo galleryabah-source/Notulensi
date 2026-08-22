@@ -1,0 +1,1 @@
+export default function handler(req,res){res.setHeader('Cache-Control','no-store');res.setHeader('Set-Cookie','notulensi_admin_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');res.status(200).json({authenticated:false})}
