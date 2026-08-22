@@ -1,11 +1,13 @@
-import { decrypt, db, ensureTable, readConfig, PROVIDERS } from './ai-config.js';
+import { decrypt, db, ensureTable, readConfig, PROVIDERS, envSecret } from './ai-config.js';
 
 async function getProvider(client, id) {
   const cfg = await readConfig(client);
   const provider = id || cfg.defaultProvider || 'gemini';
   const saved = cfg.providers?.[provider];
   if (!PROVIDERS[provider] || !saved?.key) throw new Error('AI provider is not configured.');
-  return { id: provider, meta: PROVIDERS[provider], key: decrypt(saved.key), model: saved.model || PROVIDERS[provider].model };
+  const key = String(saved.key).startsWith('env:') ? envSecret(provider) : decrypt(saved.key);
+  if (!key) throw new Error('AI provider is not configured.');
+  return { id: provider, meta: PROVIDERS[provider], key, model: saved.model || PROVIDERS[provider].model };
 }
 async function health(p) {
   if (p.id === 'gemini') return fetch(`${p.meta.testUrl}?key=${encodeURIComponent(p.key)}`);
@@ -33,16 +35,15 @@ export default async function handler(req,res){
     const p=await getProvider(client, req.body?.provider);
     if(req.method==='GET'){
       const r=await health(p);
-      // Public health metadata is intentionally non-secret. The provider key
-      // is never returned to the browser; only availability/provider/model/status
-      // are exposed so the public UI can accurately show AI connectivity.
       return res.status(200).json({healthy:r.ok,provider:p.id,model:p.model,status:r.status});
     }
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt || prompt.length>20000) return res.status(400).json({error:'Prompt is required and must be <= 20000 characters.'});
     const r=await generate(p,prompt); const raw=await r.text(); let data; try{data=JSON.parse(raw)}catch{data={raw}};
     if(!r.ok) return res.status(r.status>=400&&r.status<600?r.status:502).json({error:'AI provider request failed.',provider:p.id,details:data?.error?.message||data?.error||undefined});
-    return res.status(200).json({ok:true,provider:p.id,model:p.model,text:extractText(p.id,data),raw:data});
+    const text=extractText(p.id,data);
+    if(!String(text||'').trim()) return res.status(502).json({error:'AI provider returned empty content.',provider:p.id,model:p.model});
+    return res.status(200).json({ok:true,provider:p.id,model:p.model,text,raw:data});
   }catch(error){console.error('ai-runtime',error);return res.status(503).json({error:error.message||'AI runtime unavailable.'});}
   finally{client.release();}
 }
