@@ -1,0 +1,4 @@
+import crypto from 'node:crypto';
+const COOKIE='notulensi_admin_session';
+function verify(token){try{const [p,s]=token.split('.');if(!p||!s||!process.env.ADMIN_SESSION_SECRET)return null;const raw=Buffer.from(p,'base64url').toString();const expected=crypto.createHmac('sha256',process.env.ADMIN_SESSION_SECRET).update(raw).digest();const got=Buffer.from(s,'base64url');if(got.length!==expected.length||!crypto.timingSafeEqual(got,expected))return null;const x=JSON.parse(raw);if(!x.exp||x.exp<Date.now())return null;return x}catch{return null}}
+export default function handler(req,res){res.setHeader('Cache-Control','no-store');const c=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(COOKIE+'='));const token=c?c.slice(COOKIE.length+1):'';const s=verify(token);if(s){res.status(200).json({authenticated:true,role:s.role,email:s.sub})}else res.status(401).json({authenticated:false})}
