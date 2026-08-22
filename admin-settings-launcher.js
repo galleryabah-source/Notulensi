@@ -1,54 +1,17 @@
 (function(){
   'use strict';
   function lockPublicAiSettings(frame){
-    try{
-      const win=frame.contentWindow, doc=frame.contentDocument;
-      if(!win||!doc)return;
-      // Public users must not have a client-side AI/API-key settings surface.
-      try{win.openSettingsModal=function(){return false};}catch{}
-      const styleId='notulensi-public-settings-lock';
-      if(!doc.getElementById(styleId)){
-        const style=doc.createElement('style');
-        style.id=styleId;
-        style.textContent=`
-          /* Remove the public Settings entrypoint and AI-key settings surface. */
-          button[onclick*="openSettingsModal"],
-          [data-public-ai-settings],
-          #settingsModal,
-          #apiSettingsModal,
-          #geminiApiKeyModal { display:none !important; }
-        `;
-        (doc.head||doc.documentElement).appendChild(style);
-      }
-      // The current baseline uses a text-labeled Settings button; remove only that
-      // public entrypoint, never the authenticated Admin launcher in the parent page.
-      for(const el of doc.querySelectorAll('button')){
-        const text=(el.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
-        if(text==='⚙️ pengaturan' || text==='pengaturan' || text.includes('pengaturan ai')){
-          el.remove();
-        }
-      }
-    }catch(e){ console.warn('Public AI settings lockdown failed:',e); }
-  }
+    try{const win=frame.contentWindow,doc=frame.contentDocument;if(!win||!doc)return;try{win.openSettingsModal=function(){return false};}catch{}const styleId='notulensi-public-settings-lock';if(!doc.getElementById(styleId)){const style=doc.createElement('style');style.id=styleId;style.textContent=`button[onclick*="openSettingsModal"],[data-public-ai-settings],#settingsModal,#apiSettingsModal,#geminiApiKeyModal{display:none!important}`;(doc.head||doc.documentElement).appendChild(style)}for(const el of doc.querySelectorAll('button')){const text=(el.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();if(text==='⚙️ pengaturan'||text==='pengaturan'||text.includes('pengaturan ai'))el.remove()}}catch(e){console.warn('Public AI settings lockdown failed:',e)}}
+  function injectSeoButton(frame){try{const doc=frame.contentDocument;if(!doc||doc.getElementById('notulensiSeoAdminBtn'))return;const cards=[...doc.querySelectorAll('.card')];const b=doc.createElement('button');b.id='notulensiSeoAdminBtn';b.type='button';b.textContent='🔎 Buka SEO / Google Indexing';Object.assign(b.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:'10010',border:'1px solid #334155',borderRadius:'10px',background:'#2563eb',color:'#fff',padding:'10px 13px',font:'700 12px system-ui,sans-serif',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.35)'});b.onclick=()=>window.open('./seo-settings.html','_blank','noopener,noreferrer');doc.body.appendChild(b)}catch(e){console.warn('SEO admin launcher injection failed:',e)}}
   function mount(){
     if(document.getElementById('notulensiAdminLauncher'))return;
     const appFrame=document.getElementById('appFrame');
     if(appFrame) appFrame.addEventListener('load',()=>lockPublicAiSettings(appFrame),{once:true});
-    if(appFrame && appFrame.contentDocument) lockPublicAiSettings(appFrame);
-
+    if(appFrame&&appFrame.contentDocument)lockPublicAiSettings(appFrame);
     fetch('./api/admin-session',{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.json():null).then(s=>{if(!s||!s.authenticated)return;
-      const b=document.createElement('button');b.id='notulensiAdminLauncher';b.type='button';b.textContent='⚙️ Pengaturan Admin';
-      Object.assign(b.style,{position:'fixed',left:'14px',bottom:'58px',zIndex:'10000',border:'1px solid #334155',borderRadius:'10px',background:'#0f172a',color:'#e2e8f0',padding:'9px 12px',font:'700 11px system-ui,sans-serif',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.28)'});
-      b.onmouseenter=()=>b.style.background='#1e293b';b.onmouseleave=()=>b.style.background='#0f172a';
-      const panel=document.createElement('div');panel.id='notulensiAdminPanel';
-      Object.assign(panel.style,{position:'fixed',inset:'0',zIndex:'10001',display:'none',background:'rgba(2,6,23,.82)',backdropFilter:'blur(5px)'});
-      panel.innerHTML='<button id="notulensiAdminClose" type="button" style="position:absolute;right:4.8%;top:3%;z-index:2;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#e2e8f0;padding:8px 11px;cursor:pointer">Tutup ✕</button><iframe title="Pengaturan Admin" src="./admin-settings.html" style="position:absolute;inset:4%;width:92%;height:92%;border:1px solid #334155;border-radius:18px;background:#020617;box-shadow:0 24px 80px rgba(0,0,0,.55)"></iframe>';
-      document.body.appendChild(panel);document.body.appendChild(b);
-      const frame=panel.querySelector('iframe');
-      frame.addEventListener('load',()=>{
-        try{const doc=frame.contentDocument;const script=doc.createElement('script');script.src='./admin-settings-server-sync.js';doc.body.appendChild(script)}catch{}
-      });
-      b.onclick=()=>{panel.style.display='block'};panel.querySelector('#notulensiAdminClose').onclick=()=>{panel.style.display='none'};panel.addEventListener('click',e=>{if(e.target===panel)panel.style.display='none'});
+      const b=document.createElement('button');b.id='notulensiAdminLauncher';b.type='button';b.textContent='⚙️ Pengaturan Admin';Object.assign(b.style,{position:'fixed',left:'14px',bottom:'58px',zIndex:'10000',border:'1px solid #334155',borderRadius:'10px',background:'#0f172a',color:'#e2e8f0',padding:'9px 12px',font:'700 11px system-ui,sans-serif',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.28)'});b.onmouseenter=()=>b.style.background='#1e293b';b.onmouseleave=()=>b.style.background='#0f172a';
+      const panel=document.createElement('div');panel.id='notulensiAdminPanel';Object.assign(panel.style,{position:'fixed',inset:'0',zIndex:'10001',display:'none',background:'rgba(2,6,23,.82)',backdropFilter:'blur(5px)'});panel.innerHTML='<button id="notulensiAdminClose" type="button" style="position:absolute;right:4.8%;top:3%;z-index:2;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#e2e8f0;padding:8px 11px;cursor:pointer">Tutup ✕</button><iframe title="Pengaturan Admin" src="./admin-settings.html" style="position:absolute;inset:4%;width:92%;height:92%;border:1px solid #334155;border-radius:18px;background:#020617;box-shadow:0 24px 80px rgba(0,0,0,.55)"></iframe>';
+      document.body.appendChild(panel);document.body.appendChild(b);const frame=panel.querySelector('iframe');frame.addEventListener('load',()=>{try{const doc=frame.contentDocument;const script=doc.createElement('script');script.src='./admin-settings-server-sync.js';doc.body.appendChild(script);injectSeoButton(frame)}catch{}});b.onclick=()=>{panel.style.display='block';setTimeout(()=>injectSeoButton(frame),250)};panel.querySelector('#notulensiAdminClose').onclick=()=>{panel.style.display='none'};panel.addEventListener('click',e=>{if(e.target===panel)panel.style.display='none'});
     }).catch(()=>{});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
