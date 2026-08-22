@@ -1,0 +1,7 @@
+import http from 'node:http';
+import { once } from 'node:events';
+import { writeFileSync } from 'node:fs';
+const port=4188;let requests=0;const server=http.createServer((req,res)=>{requests++;if(req.url==='/health'){res.writeHead(200);return res.end('ok');}res.writeHead(404);res.end();});server.listen(port,'127.0.0.1');await once(server,'listening');
+const total=100, concurrency=10;let next=0;const latencies=[];let errors=0;
+async function one(){while(true){const i=next++;if(i>=total)return;await new Promise(resolve=>{const t=process.hrtime.bigint();http.get({host:'127.0.0.1',port,path:'/health'},res=>{res.resume();res.on('end',()=>{latencies.push(Number(process.hrtime.bigint()-t)/1e6);if(res.statusCode!==200)errors++;resolve();});}).on('error',()=>{errors++;resolve();});});}}
+const started=Date.now();await Promise.all(Array.from({length:concurrency},one));const durationMs=Date.now()-started;server.close();await once(server,'close');latencies.sort((a,b)=>a-b);const p95=latencies[Math.floor(latencies.length*.95)-1]||0;const throughput=total/(durationMs/1000);const status=errors===0&&latencies.length===total?'PASS':'FAIL';const report={schemaVersion:'1.0.0',status,checks:{requestsCompleted:latencies.length===total,errorRate:errors/total,p95Ms:p95},load:{total,concurrency,durationMs,throughputRps:throughput}};writeFileSync('phase17-execution/performance-runtime.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));if(status!=='PASS')process.exitCode=1;
