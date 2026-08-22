@@ -34,14 +34,39 @@ function decrypt(value) {
   decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8');
 }
-function mask(key) { if (!key) return ''; if (key.length <= 8) return '••••••••'; return `${key.slice(0, 4)}••••${key.slice(-4)}`; }
+function mask(key) {
+  if (!key) return '';
+  if (String(key).startsWith('env:')) return 'server-managed';
+  if (key.length <= 8) return '••••••••';
+  return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
 function safeModel(provider, value) { const model = String(value || '').trim(); return model.slice(0, 200) || PROVIDERS[provider].model; }
+const ENV_KEYS = {
+  gemini: ['GEMINI_API_KEY','GOOGLE_GEMINI_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  huggingface: ['HUGGINGFACE_API_KEY','HF_API_KEY'],
+  mistral: ['MISTRAL_API_KEY']
+};
+function envSecret(provider) {
+  return (ENV_KEYS[provider] || []).map(k => process.env[k]).find(v => String(v || '').trim()) || '';
+}
+function hydrateEnvironmentProviders(config) {
+  const out = { defaultProvider: config.defaultProvider || 'gemini', providers: { ...(config.providers || {}) } };
+  for (const id of Object.keys(PROVIDERS)) {
+    if (!out.providers[id]?.key) {
+      const env = envSecret(id);
+      if (env) out.providers[id] = { ...(out.providers[id] || {}), key: `env:${ENV_KEYS[id].find(k => process.env[k]) || ''}` };
+    }
+  }
+  return out;
+}
 async function ensureTable(client) {
   await client.query(`CREATE TABLE IF NOT EXISTS notulensi_ai_provider_config (config_key TEXT PRIMARY KEY, config JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
 }
 async function readConfig(client) {
   const r = await client.query('SELECT config FROM notulensi_ai_provider_config WHERE config_key=$1', ['default']);
-  return r.rows[0]?.config || { defaultProvider: 'gemini', providers: {} };
+  return hydrateEnvironmentProviders(r.rows[0]?.config || { defaultProvider: 'gemini', providers: {} });
 }
 function publicConfig(raw) {
   const out = { defaultProvider: raw.defaultProvider || 'gemini', providers: {} };
@@ -80,7 +105,7 @@ export default async function handler(req, res) {
       const input = body.providers?.[id];
       if (!input) continue;
       const existing = next.providers[id] || {};
-      if (typeof input.key === 'string' && input.key.trim() && !input.key.includes('••••')) existing.key = encrypt(input.key.trim());
+      if (typeof input.key === 'string' && input.key.trim() && !input.key.includes('••••') && !input.key.includes('server-managed')) existing.key = encrypt(input.key.trim());
       if (typeof input.model === 'string') existing.model = safeModel(id, input.model);
       next.providers[id] = existing;
     }
@@ -91,4 +116,4 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'Server-side AI configuration is unavailable.' });
   } finally { client.release(); }
 }
-export { PROVIDERS, decrypt, db, ensureTable, readConfig };
+export { PROVIDERS, decrypt, db, ensureTable, readConfig, envSecret };
