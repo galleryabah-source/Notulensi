@@ -25,6 +25,10 @@
     try{if(typeof window.loadSettings==='function')window.loadSettings();if(typeof window.updateApiBadge==='function')window.updateApiBadge()}catch(e){console.warn('Legacy AI runtime refresh failed:',e)}
     return changed;
   }
+  function removeKnowledgeBaseUI(){
+    const section=document.getElementById('knowledgeBaseSection');
+    if(section) section.remove();
+  }
   function applyBadge(el,s){
     if(!el)return;
     const text=s.online?'AI Online · '+s.provider:'AI Offline · '+OFFLINE_TEXT;
@@ -44,6 +48,7 @@
     window.meetingAIStatus=s;
   }
   function render(){
+    removeKnowledgeBaseUI();
     const s=getState();
     if(s.online)syncLegacyAppSettings(s);
     let el=document.getElementById('aiRuntimeStatus');
