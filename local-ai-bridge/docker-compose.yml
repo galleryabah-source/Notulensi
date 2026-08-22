@@ -1,0 +1,22 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+  bridge:
+    build: .
+    restart: unless-stopped
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      LOCAL_AI_BRIDGE_TOKEN: ${LOCAL_AI_BRIDGE_TOKEN}
+      PORT: 8787
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-*}
+    depends_on:
+      - ollama
+    ports:
+      - "8787:8787"
+volumes:
+  ollama:
