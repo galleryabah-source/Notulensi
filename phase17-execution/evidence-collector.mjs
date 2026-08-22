@@ -11,7 +11,7 @@ const runtimeDomains = [
   ['17-E.runtime.database','database','Database behavior','Requires a real database connection and controlled test data.','phase17-execution/database-runtime.json'],
   ['17-E.runtime.auth','security','Authentication/RBAC','Requires real authentication and authorization execution.','phase17-execution/r2.2-auth-runtime.json'],
   ['17-E.runtime.security','security','Security regression','Requires executable security tests in a configured environment.','phase17-execution/r2.3-security-runtime.json'],
-  ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.',null],
+  ['17-E.runtime.ai','ai','AI provider and cost controls','Requires configured AI provider execution and usage evidence.','phase17-execution/r2.4-ai-runtime.json'],
   ['17-E.runtime.observability','observability','Observability','Requires real logs/metrics/traces from the running system.',null],
   ['17-E.runtime.backup','backup','Backup/restore','Requires an actual backup and restore drill.',null],
   ['17-E.runtime.dr','disaster-recovery','Disaster recovery','Requires an actual DR/failover exercise.',null],
