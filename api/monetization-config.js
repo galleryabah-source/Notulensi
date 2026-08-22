@@ -25,15 +25,8 @@ function db() {
     process.env.notulensi_POSTGRES_URL ||
     process.env.notulensi_POSTGRES_PRISMA_URL ||
     process.env.notulensi_DATABASE_URL_UNPOOLED;
-
   if (!connectionString) throw new Error('DATABASE_URL is not configured.');
-  if (!pool) {
-    pool = new Pool({
-      connectionString,
-      max: 2,
-      ssl: process.env.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: false }
-    });
-  }
+  if (!pool) pool = new Pool({ connectionString, max: 2, ssl: process.env.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: false } });
   return pool;
 }
 
@@ -77,16 +70,46 @@ export default async function handler(req, res) {
   try {
     client = await db().connect();
     await ensureTable(client);
+
+    const result = await client.query('SELECT config FROM notulensi_monetization_config WHERE config_key = $1', ['default']);
+    const current = mergeConfig(result.rows[0]?.config || {});
+
     if (req.method === 'GET') {
-      const result = await client.query('SELECT config FROM notulensi_monetization_config WHERE config_key = $1', ['default']);
-      return res.status(200).json({ config: mergeConfig(result.rows[0]?.config || {}), updated: Boolean(result.rows[0]) });
+      return res.status(200).json({ config: current, updated: Boolean(result.rows[0]) });
     }
-    const config = validate(req.body?.config || req.body);
-    await client.query(`INSERT INTO notulensi_monetization_config(config_key, config, updated_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(config_key) DO UPDATE SET config=EXCLUDED.config, updated_at=NOW()`, ['default', JSON.stringify(config)]);
-    return res.status(200).json({ saved: true, config, role: session.role });
+
+    // Merge incoming settings with the persisted server configuration so that
+    // an admin update cannot accidentally erase unrelated settings.
+    const incoming = req.body?.config || req.body || {};
+    const merged = mergeConfig({
+      ...current,
+      ...incoming,
+      affiliate: { ...current.affiliate, ...(incoming.affiliate || {}) },
+      adsense: { ...current.adsense, ...(incoming.adsense || {}) },
+      premium: { ...current.premium, ...(incoming.premium || {}) },
+      privacy: { ...current.privacy, ...(incoming.privacy || {}) }
+    });
+    const config = validate(merged);
+
+    await client.query(
+      `INSERT INTO notulensi_monetization_config(config_key, config, updated_at)
+       VALUES($1,$2::jsonb,NOW())
+       ON CONFLICT(config_key) DO UPDATE SET config=EXCLUDED.config, updated_at=NOW()`,
+      ['default', JSON.stringify(config)]
+    );
+
+    // Read-after-write verification: never report success unless the database
+    // returns the same persisted configuration.
+    const verify = await client.query('SELECT config FROM notulensi_monetization_config WHERE config_key = $1', ['default']);
+    const persisted = mergeConfig(verify.rows[0]?.config || {});
+    if (JSON.stringify(persisted) !== JSON.stringify(config)) {
+      throw new Error('Persistence verification failed.');
+    }
+
+    return res.status(200).json({ saved: true, verified: true, config: persisted, role: session.role });
   } catch (error) {
     console.error('monetization-config', error);
-    return res.status(503).json({ error: 'Server-side monetization storage is unavailable.' });
+    return res.status(503).json({ error: error?.message === 'Persistence verification failed.' ? error.message : 'Server-side monetization storage is unavailable.' });
   } finally {
     if (client) client.release();
   }
