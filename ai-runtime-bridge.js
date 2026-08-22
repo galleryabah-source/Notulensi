@@ -21,8 +21,9 @@
     window.meetingAIStatus=s;
     try{window.dispatchEvent(new CustomEvent('meeting-ai-status',{detail:s}))}catch(e){}
   }
-  render();
   window.addEventListener('storage',render);
   window.addEventListener('ai-settings-updated',render);
-  setInterval(render,3000);
+  window.addEventListener('message',function(e){if(e.data&&e.data.type==='meeting-ai-settings-updated')render()});
+  render();
+  setInterval(render,1000);
 })();
