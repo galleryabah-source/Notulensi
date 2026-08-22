@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "items": [
+    {"id":"laptop-work","title":"Laptop & komputer kerja","categories":["computing","productivity","business"],"tags":["laptop","office"],"weight":70,"enabled":true,"url":""},
+    {"id":"mobile-essentials","title":"Aksesori smartphone & tablet","categories":["mobile","productivity","travel"],"tags":["smartphone","tablet","powerbank"],"weight":60,"enabled":true,"url":""},
+    {"id":"workspace","title":"Workspace & ergonomi","categories":["office","productivity","home"],"tags":["ergonomics","workspace","desk"],"weight":65,"enabled":true,"url":""},
+    {"id":"software-tools","title":"Software & tools digital","categories":["software","productivity","ai-tools"],"tags":["saas","automation","cloud"],"weight":70,"enabled":true,"url":""},
+    {"id":"networking","title":"Wi-Fi, jaringan & konektivitas","categories":["networking","computing","security"],"tags":["router","wifi","usb"],"weight":55,"enabled":true,"url":""},
+    {"id":"storage-backup","title":"Storage & backup data","categories":["storage","computing","security"],"tags":["ssd","backup","cloud-storage"],"weight":55,"enabled":true,"url":""},
+    {"id":"education","title":"Pendidikan & pembelajaran","categories":["education","books","language"],"tags":["course","training","study"],"weight":50,"enabled":true,"url":""},
+    {"id":"books-reference","title":"Buku & referensi","categories":["books","education","knowledge"],"tags":["reading","reference","ebook"],"weight":50,"enabled":true,"url":""},
+    {"id":"writing","title":"Menulis, catatan & dokumentasi","categories":["writing","documentation","office"],"tags":["notetaking","editing","printing"],"weight":60,"enabled":true,"url":""},
+    {"id":"travel","title":"Perjalanan & mobilitas","categories":["travel","lifestyle","automotive"],"tags":["luggage","commuting","outdoor"],"weight":45,"enabled":true,"url":""},
+    {"id":"home-living","title":"Rumah & living","categories":["home","lifestyle","organization"],"tags":["kitchen","furniture","smart-home"],"weight":45,"enabled":true,"url":""},
+    {"id":"health-fitness","title":"Kebugaran & wellness","categories":["health","lifestyle","sports"],"tags":["fitness","sleep","wellness"],"weight":45,"enabled":true,"url":""},
+    {"id":"photography","title":"Fotografi & creative","categories":["photography","video","design"],"tags":["camera","lens","tripod"],"weight":45,"enabled":true,"url":""},
+    {"id":"gaming","title":"Gaming & entertainment","categories":["gaming","computing","lifestyle"],"tags":["console","pc-gaming","controller"],"weight":35,"enabled":true,"url":""},
+    {"id":"fashion","title":"Fashion & accessories","categories":["fashion","lifestyle"],"tags":["clothing","shoes","bags"],"weight":35,"enabled":true,"url":""},
+    {"id":"beauty","title":"Beauty & personal care","categories":["beauty","lifestyle","health"],"tags":["skincare","grooming","haircare"],"weight":35,"enabled":true,"url":""},
+    {"id":"food-coffee","title":"Makanan, minuman & coffee","categories":["food","home","lifestyle"],"tags":["coffee","cooking","beverage"],"weight":40,"enabled":true,"url":""},
+    {"id":"business-umkm","title":"Bisnis, UMKM & marketing","categories":["business","marketing","finance"],"tags":["sales","commerce","seo"],"weight":55,"enabled":true,"url":""},
+    {"id":"security","title":"Keamanan & privacy","categories":["security","computing","networking"],"tags":["privacy","backup","network-security"],"weight":50,"enabled":true,"url":""},
+    {"id":"family","title":"Keluarga & household","categories":["family","home","lifestyle"],"tags":["parenting","household"],"weight":30,"enabled":true,"url":""},
+    {"id":"pets","title":"Hewan peliharaan","categories":["pets","home","lifestyle"],"tags":["pet-care","pet-supplies"],"weight":25,"enabled":true,"url":""},
+    {"id":"automotive","title":"Otomotif","categories":["automotive","travel","lifestyle"],"tags":["car","motorcycle","maintenance"],"weight":35,"enabled":true,"url":""},
+    {"id":"hobbies-diy","title":"Hobi, craft & DIY","categories":["hobbies","design","lifestyle"],"tags":["craft","diy","art"],"weight":30,"enabled":true,"url":""},
+    {"id":"science","title":"Sains & engineering","categories":["science","education","computing"],"tags":["research","engineering","laboratory"],"weight":35,"enabled":true,"url":""},
+    {"id":"design","title":"Design & creative tools","categories":["design","software","marketing"],"tags":["graphics","ui-ux","templates"],"weight":45,"enabled":true,"url":""},
+    {"id":"audio-video","title":"Audio, video & creator","categories":["audio","video","creator"],"tags":["microphone","webcam","streaming"],"weight":50,"enabled":true,"url":""},
+    {"id":"sustainability","title":"Produk ramah lingkungan","categories":["sustainability","home","lifestyle"],"tags":["reusable","energy-saving","eco-friendly"],"weight":25,"enabled":true,"url":""}
+  ]
+}
