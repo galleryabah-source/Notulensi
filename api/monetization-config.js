@@ -55,15 +55,17 @@ async function ensureTable(client) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET' && req.method !== 'PUT') return res.status(405).json({ error: 'Method not allowed' });
-  const session = requireAdmin(req, res);
-  if (!session) return;
+  let session = null;
+  if (req.method === 'PUT') {
+    session = requireAdmin(req, res);
+    if (!session) return;
+  }
   const client = await db().connect();
   try {
     await ensureTable(client);
     if (req.method === 'GET') {
       const result = await client.query('SELECT config FROM notulensi_monetization_config WHERE config_key = $1', ['default']);
-      const config = mergeConfig(result.rows[0]?.config || {});
-      return res.status(200).json({ config, updated: Boolean(result.rows[0]), role: session.role });
+      return res.status(200).json({ config: mergeConfig(result.rows[0]?.config || {}), updated: Boolean(result.rows[0]) });
     }
     const config = validate(req.body?.config || req.body);
     await client.query(`INSERT INTO notulensi_monetization_config(config_key, config, updated_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(config_key) DO UPDATE SET config=EXCLUDED.config, updated_at=NOW()`, ['default', JSON.stringify(config)]);
