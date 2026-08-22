@@ -20,10 +20,16 @@ const DEFAULT_CONFIG = {
 
 let pool;
 function db() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured.');
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.notulensi_POSTGRES_URL ||
+    process.env.notulensi_POSTGRES_PRISMA_URL ||
+    process.env.notulensi_DATABASE_URL_UNPOOLED;
+
+  if (!connectionString) throw new Error('DATABASE_URL is not configured.');
   if (!pool) {
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: 2,
       ssl: process.env.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: false }
     });
