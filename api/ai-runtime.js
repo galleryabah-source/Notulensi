@@ -4,10 +4,12 @@ async function getProvider(client, id) {
   const cfg = await readConfig(client);
   const provider = id || cfg.defaultProvider || 'gemini';
   const saved = cfg.providers?.[provider];
-  if (!PROVIDERS[provider] || !saved?.key) throw new Error('AI provider is not configured.');
+  if (!PROVIDERS[provider] || !saved?.key) {
+    return { configured: false, id: provider, meta: PROVIDERS[provider] || null, key: '', model: saved?.model || PROVIDERS[provider]?.model || null };
+  }
   const key = String(saved.key).startsWith('env:') ? envSecret(provider) : decrypt(saved.key);
-  if (!key) throw new Error('AI provider is not configured.');
-  return { id: provider, meta: PROVIDERS[provider], key, model: saved.model || PROVIDERS[provider].model };
+  if (!key) return { configured: false, id: provider, meta: PROVIDERS[provider], key: '', model: saved.model || PROVIDERS[provider].model };
+  return { configured: true, id: provider, meta: PROVIDERS[provider], key, model: saved.model || PROVIDERS[provider].model };
 }
 async function health(p) {
   if (p.id === 'gemini') return fetch(`${p.meta.testUrl}?key=${encodeURIComponent(p.key)}`);
@@ -32,11 +34,16 @@ export default async function handler(req,res){
   const client=await db().connect();
   try{
     await ensureTable(client);
-    const p=await getProvider(client, req.body?.provider);
+    const requestedProvider = req.method === 'GET'
+      ? (typeof req.query?.provider === 'string' ? req.query.provider : null)
+      : req.body?.provider;
+    const p=await getProvider(client, requestedProvider);
     if(req.method==='GET'){
+      if(!p.configured) return res.status(200).json({healthy:false,configured:false,provider:p.id,model:p.model,status:0,reason:'AI provider is not configured.'});
       const r=await health(p);
-      return res.status(200).json({healthy:r.ok,provider:p.id,model:p.model,status:r.status});
+      return res.status(200).json({healthy:r.ok,configured:true,provider:p.id,model:p.model,status:r.status,reason:r.ok?null:'Provider health check failed.'});
     }
+    if(!p.configured) return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:p.id,model:p.model});
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt || prompt.length>20000) return res.status(400).json({error:'Prompt is required and must be <= 20000 characters.'});
     const r=await generate(p,prompt); const raw=await r.text(); let data; try{data=JSON.parse(raw)}catch{data={raw}};
