@@ -29,14 +29,6 @@
       el.textContent=s.online?'AI Online · '+s.provider:'AI Offline · '+OFFLINE_TEXT;
       el.style.color=s.online?'#86efac':'#fbbf24';
     });
-    document.querySelectorAll('[id], [class]').forEach(el=>{
-      if(el===badge||el.id==='aiRuntimeStatus')return;
-      const text=(el.textContent||'').trim();
-      if(text==='API Key belum diisi'||text==='AI Offline · API Key belum diisi'||text.includes('API Key belum tervalidasi')){
-        el.textContent=s.online?'AI Online · '+s.provider+' · '+s.model:'AI Offline · '+OFFLINE_TEXT;
-        el.style.color=s.online?'#86efac':'#fbbf24';
-      }
-    });
     window.meetingAIStatus=s;
   }
   function render(){
@@ -56,12 +48,5 @@
   window.addEventListener('storage',render);
   window.addEventListener('ai-settings-updated',render);
   window.addEventListener('message',function(e){if(e.data&&e.data.type==='meeting-ai-settings-updated')render()});
-  const observer=new MutationObserver(function(){
-    const s=getState();
-    const badge=document.getElementById('apiStatusBadge');
-    if(badge)applyBadge(badge,s);
-  });
-  observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class']});
   render();
-  setInterval(render,500);
 })();
