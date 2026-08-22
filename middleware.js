@@ -1,5 +1,5 @@
 const COOKIE = 'notulensi_admin_session';
-const PROTECTED = new Set(['/admin-settings.html', '/ai-settings-v2.html']);
+const PROTECTED = new Set(['/admin-settings.html', '/ai-settings-v2.html', '/seo-settings.html']);
 
 function decodeBase64Url(value) {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
@@ -37,5 +37,5 @@ export default async function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/admin-settings.html', '/ai-settings-v2.html']
+  matcher: ['/admin-settings.html', '/ai-settings-v2.html', '/seo-settings.html']
 };
