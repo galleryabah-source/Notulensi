@@ -1,0 +1,97 @@
+name: Phase 17-E.13 Backup and DR Runtime Evidence
+
+on:
+  push:
+    branches:
+      - phase17-e13-execution-baseline
+  pull_request:
+    branches:
+      - phase17-execution-evidence
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e13:
+    name: Real PostgreSQL backup restore and DR evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: phase17_runtime
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d phase17_runtime"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NODE_ENV: test
+      EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/evidence-report.json
+      BACKUP_RESTORE_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/backup-restore-evidence.json
+      DR_EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/disaster-recovery-evidence.json
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: phase17_runtime
+      BACKUP_RESTORE_DB: phase17_restore_drill
+      DR_DATABASE: phase17_dr_recovery
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify exact CI revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          echo "CI_COMMIT=$actual"
+          test "$actual" = "${GITHUB_SHA}"
+      - name: Wait for PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Validate E.13 harness syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check phase17-execution/backup-restore-regression.mjs
+          node --check phase17-execution/disaster-recovery-regression.mjs
+          node --check phase17-execution/evidence-collector.mjs
+      - name: Execute real PostgreSQL backup and restore drill
+        shell: bash
+        run: node phase17-execution/backup-restore-regression.mjs
+      - name: Execute controlled disaster recovery drill
+        shell: bash
+        run: node phase17-execution/disaster-recovery-regression.mjs
+      - name: Collect E.13 evidence
+        shell: bash
+        run: node phase17-execution/evidence-collector.mjs
+      - name: Upload E.13 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase17-e13-evidence-${{ github.sha }}
+          path: |
+            phase17-execution/backup-restore-evidence.json
+            phase17-execution/disaster-recovery-evidence.json
+            phase17-execution/evidence-report.json
+          if-no-files-found: error
+          retention-days: 14
