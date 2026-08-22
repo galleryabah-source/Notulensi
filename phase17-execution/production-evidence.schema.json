@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Phase17ProductionEvidence",
+  "type": "object",
+  "required": ["domain", "environment", "evidenceId", "status", "checks"],
+  "properties": {
+    "domain": {"enum": ["production-dr", "production-load", "production-canary"]},
+    "environment": {"type": "string", "minLength": 1},
+    "evidenceId": {"type": "string", "minLength": 1},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "checks": {"type": "object", "minProperties": 1},
+    "collectedAt": {"type": "string"},
+    "releaseId": {"type": "string"},
+    "operatorRunId": {"type": "string"}
+  }
+}
