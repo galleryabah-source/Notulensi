@@ -2,32 +2,18 @@
   'use strict';
   window.NOTULENSI_MONETIZATION = Object.freeze({
     enabled: true,
-    adsense: {
-      enabled: true,
-      publisherId: '',
-      slots: {
-        dashboardTop: '',
-        reportBottom: '',
-        docsBottom: '',
-        historyBottom: ''
-      }
-    },
+    adsense: { enabled: false, publisherId: '', slots: {} },
     affiliate: {
       enabled: true,
-      disclosure: 'Tautan afiliasi dapat memberi komisi kepada pengelola tanpa biaya tambahan bagi Anda.',
+      network: 'Shopee Affiliate',
+      disclosure: 'Rekomendasi ini menggunakan tautan afiliasi Shopee. Jika Anda membeli melalui tautan tersebut, pengelola dapat menerima komisi tanpa biaya tambahan bagi Anda.',
       items: [
-        {id:'meeting-tools',title:'Perlengkapan rapat & presentasi',description:'Rekomendasi produk yang relevan dengan pekerjaan rapat.',url:'',label:'Lihat rekomendasi'},
-        {id:'productivity',title:'Tools produktivitas',description:'Pilihan tools untuk membantu pengelolaan rapat dan dokumen.',url:'',label:'Lihat rekomendasi'}
+        {id:'meeting-tools',title:'Perlengkapan rapat & presentasi',description:'Rekomendasi produk yang relevan untuk rapat, presentasi, dan dokumentasi.',url:'',label:'Lihat di Shopee'},
+        {id:'productivity',title:'Perlengkapan produktivitas',description:'Pilihan produk pendukung pekerjaan dan pengelolaan dokumen.',url:'',label:'Lihat di Shopee'},
+        {id:'audio',title:'Peralatan audio rapat',description:'Produk pendukung rekaman suara dan transkripsi rapat.',url:'',label:'Lihat di Shopee'}
       ]
     },
-    premium: {
-      enabled: true,
-      upgradeUrl: '',
-      benefits: ['Tanpa iklan','Kuota AI lebih tinggi','Ekspor lanjutan','Workspace organisasi']
-    },
-    privacy: {
-      privacyUrl: './privacy-policy.html',
-      termsUrl: './terms.html'
-    }
+    premium: { enabled: false, upgradeUrl: '', benefits: [] },
+    privacy: { privacyUrl: './privacy-policy.html', termsUrl: './terms.html' }
   });
 })();
