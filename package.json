@@ -1,1 +1,16 @@
-{"name":"notulensi-phase17-runtime-evidence","private":true,"type":"module","engines":{"node":">=20"},"scripts":{"auth-runtime:harness":"node phase17-execution/r2.2-auth-runtime-harness.mjs"},"dependencies":{"express":"^5.1.0","jsonwebtoken":"^9.0.2","pg":"^8.16.3","zod":"^3.25.76"}}
+{
+  "name": "notulensi-phase17-runtime-evidence",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "auth-runtime:start": "node server/r2.2-auth-runtime.mjs",
+    "auth-runtime:harness": "node phase17-execution/r2.2-auth-runtime-harness.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  }
+}
