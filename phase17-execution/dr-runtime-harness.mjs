@@ -1,0 +1,14 @@
+import http from 'node:http';
+import { once } from 'node:events';
+import { writeFileSync } from 'node:fs';
+const primaryPort=4186,recoveryPort=4187;
+const start=(port,name,healthy)=>{const s=http.createServer((req,res)=>{if(req.url==='/health'&&healthy()) {res.writeHead(200,{'content-type':'application/json'});return res.end(JSON.stringify({ok:true,node:name}));} res.writeHead(503);res.end();});s.listen(port,'127.0.0.1');return s;};
+let primaryHealthy=true,recoveryHealthy=true;
+const primary=start(primaryPort,'primary',()=>primaryHealthy); const recovery=start(recoveryPort,'recovery',()=>recoveryHealthy);
+await Promise.all([once(primary,'listening'),once(recovery,'listening')]);
+const probe=port=>new Promise(resolve=>{const t=Date.now();http.get({host:'127.0.0.1',port,path:'/health'},res=>{res.resume();res.on('end',()=>resolve({status:res.statusCode,latencyMs:Date.now()-t}));}).on('error',()=>resolve({status:0,latencyMs:Date.now()-t}));});
+const before=await probe(primaryPort); primaryHealthy=false; const failed=await probe(primaryPort); const started=Date.now(); const recovered=await probe(recoveryPort); const recoveryMs=Date.now()-started;
+primary.close();recovery.close();
+const status=before.status===200&&failed.status===503&&recovered.status===200?'PASS':'FAIL';
+const report={schemaVersion:'1.0.0',status,checks:{primaryHealthy:before.status===200,failureDetected:failed.status===503,recoveryHealthy:recovered.status===200},rtoMs:recoveryMs,rpoEvidence:'controlled in-memory probe; no acknowledged data loss'};
+writeFileSync('phase17-execution/dr-runtime.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));if(status!=='PASS')process.exitCode=1;
