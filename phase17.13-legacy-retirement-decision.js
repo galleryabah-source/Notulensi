@@ -1,0 +1,4 @@
+/* Phase 17.13 — Final Legacy Retirement Decision */
+(function(global){'use strict';
+function evaluate(i){i=i||{};const c={newRuntimeStable:i.newRuntimeStable===true,dataParityProven:i.dataParityProven===true,rollbackNoLongerDependent:i.rollbackNoLongerDependent===true,retentionRequirementsSatisfied:i.retentionRequirementsSatisfied===true,auditRetentionSatisfied:i.auditRetentionSatisfied===true,stakeholderApproval:i.stakeholderApproval===true,retirementPlanTested:i.retirementPlanTested===true};const eligible=Object.values(c).every(Boolean);return {phase:'17.13',status:eligible?'LEGACY_RETIREMENT_ELIGIBLE':'LEGACY_RETIREMENT_BLOCKED',eligible,defaultAction:eligible?'CONTROLLED_RETIREMENT_REVIEW':'KEEP_LEGACY',automaticDeletion:false,checks:c};}
+global.phase1713LegacyRetirementDecision={evaluate};})(window);

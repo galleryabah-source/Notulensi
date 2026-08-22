@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Notulensi Production Readiness Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion","runId","commit","environment","generatedAt","checks"],
+  "properties": {
+    "schemaVersion": {"type":"string"},
+    "runId": {"type":"string","minLength":1},
+    "commit": {"type":"string","minLength":7},
+    "environment": {"type":"string","enum":["local","staging","production"]},
+    "generatedAt": {"type":"string","format":"date-time"},
+    "checks": {
+      "type":"array",
+      "items": {
+        "type":"object",
+        "additionalProperties": false,
+        "required":["id","phase","name","status","evidence"],
+        "properties": {
+          "id":{"type":"string"},
+          "phase":{"type":"string"},
+          "name":{"type":"string"},
+          "status":{"type":"string","enum":["PASS","FAIL","BLOCKED","NOT_RUN"]},
+          "evidence":{"type":"array","items":{"type":"string"}},
+          "details":{"type":"string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+import crypto from 'node:crypto';
+import { Pool } from 'pg';
+import { requireAdmin } from './_admin-auth.js';
+
+const PROVIDERS = {
+  gemini: { name: 'Google Gemini', model: 'gemini-2.5-flash', testUrl: 'https://generativelanguage.googleapis.com/v1beta/models' },
+  groq: { name: 'Groq', model: 'llama-3.3-70b-versatile', testUrl: 'https://api.groq.com/openai/v1/models' },
+  openrouter: { name: 'OpenRouter', model: 'openrouter/free', testUrl: 'https://openrouter.ai/api/v1/models' },
+  huggingface: { name: 'Hugging Face', model: 'meta-llama/Llama-3.1-8B-Instruct', testUrl: 'https://api-inference.huggingface.co/models' },
+  mistral: { name: 'Mistral', model: 'mistral-small-latest', testUrl: 'https://api.mistral.ai/v1/models' }
+};
+
+let pool;
+function db() {
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured.');
+  if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, ssl: process.env.DATABASE_SSL === 'disable' ? false : undefined });
+  return pool;
+}
+function keyMaterial() {
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  if (!secret) throw new Error('ADMIN_SESSION_SECRET is not configured.');
+  return crypto.createHash('sha256').update(secret).digest();
+}
+function encrypt(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyMaterial(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
+  return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`;
+}
+function decrypt(value) {
+  const [ivRaw, tagRaw, dataRaw] = String(value || '').split('.');
+  if (!ivRaw || !tagRaw || !dataRaw) throw new Error('Invalid encrypted provider secret.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', keyMaterial(), Buffer.from(ivRaw, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8');
+}
+function mask(key) { if (!key) return ''; if (key.length <= 8) return '••••••••'; return `${key.slice(0, 4)}••••${key.slice(-4)}`; }
+function safeModel(provider, value) { const model = String(value || '').trim(); return model.slice(0, 200) || PROVIDERS[provider].model; }
+async function ensureTable(client) {
+  await client.query(`CREATE TABLE IF NOT EXISTS notulensi_ai_provider_config (config_key TEXT PRIMARY KEY, config JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+}
+async function readConfig(client) {
+  const r = await client.query('SELECT config FROM notulensi_ai_provider_config WHERE config_key=$1', ['default']);
+  return r.rows[0]?.config || { defaultProvider: 'gemini', providers: {} };
+}
+function publicConfig(raw) {
+  const out = { defaultProvider: raw.defaultProvider || 'gemini', providers: {} };
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const saved = raw.providers?.[id] || {};
+    out.providers[id] = { name: p.name, model: safeModel(id, saved.model), configured: Boolean(saved.key), key: mask(saved.key) };
+  }
+  return out;
+}
+async function testProvider(id, key) {
+  const p = PROVIDERS[id];
+  if (!p || !key) return { healthy: false, error: 'Provider or API key missing.' };
+  const headers = { Authorization: `Bearer ${key}` };
+  let response;
+  if (id === 'gemini') response = await fetch(`${p.testUrl}?key=${encodeURIComponent(key)}`);
+  else response = await fetch(p.testUrl, { headers });
+  if (!response.ok) return { healthy: false, error: `HTTP ${response.status}` };
+  return { healthy: true };
+}
+export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!['GET','PUT','POST','DELETE'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'GET') { const session = requireAdmin(req, res); if (!session) return; }
+  const client = await db().connect();
+  try {
+    await ensureTable(client);
+    const current = await readConfig(client);
+    if (req.method === 'GET') return res.status(200).json({ config: publicConfig(current) });
+    if (req.method === 'DELETE') {
+      await client.query('DELETE FROM notulensi_ai_provider_config WHERE config_key=$1', ['default']);
+      return res.status(200).json({ cleared: true });
+    }
+    const body = req.body || {};
+    const next = { defaultProvider: PROVIDERS[body.defaultProvider] ? body.defaultProvider : (current.defaultProvider || 'gemini'), providers: { ...(current.providers || {}) } };
+    for (const id of Object.keys(PROVIDERS)) {
+      const input = body.providers?.[id];
+      if (!input) continue;
+      const existing = next.providers[id] || {};
+      if (typeof input.key === 'string' && input.key.trim() && !input.key.includes('••••')) existing.key = encrypt(input.key.trim());
+      if (typeof input.model === 'string') existing.model = safeModel(id, input.model);
+      next.providers[id] = existing;
+    }
+    await client.query(`INSERT INTO notulensi_ai_provider_config(config_key,config,updated_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(config_key) DO UPDATE SET config=EXCLUDED.config,updated_at=NOW()`, ['default', JSON.stringify(next)]);
+    return res.status(200).json({ saved: true, config: publicConfig(next) });
+  } catch (error) {
+    console.error('ai-config', error);
+    return res.status(503).json({ error: 'Server-side AI configuration is unavailable.' });
+  } finally { client.release(); }
+}
+export { PROVIDERS, decrypt, db, ensureTable, readConfig };

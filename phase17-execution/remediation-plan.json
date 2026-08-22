@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "policy": {
+    "failClosed": true,
+    "priorityOrder": ["P0","P1","P2","P3"],
+    "passRequiresEvidence": true,
+    "automaticLegacyDeletion": false
+  },
+  "lifecycle": ["IDENTIFY","REPRODUCE","ROOT_CAUSE","MINIMAL_FIX","TEST","EVIDENCE","RE_RUN_GATE"],
+  "rules": [
+    {"severity":"P0","targetSla":"block-release","requiresApproval":true},
+    {"severity":"P1","targetSla":"before-production","requiresApproval":true},
+    {"severity":"P2","targetSla":"before-final-closure","requiresApproval":false},
+    {"severity":"P3","targetSla":"tracked-improvement","requiresApproval":false}
+  ],
+  "items": []
+}

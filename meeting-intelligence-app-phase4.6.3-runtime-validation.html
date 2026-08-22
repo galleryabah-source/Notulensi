@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meeting Intelligence — Phase 4.6.3 Runtime Validation</title>
+  <style>
+    body{font-family:Inter,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:24px}
+    main{max-width:900px;margin:auto}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:20px}
+    button{background:#4f46e5;color:white;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+    pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:10px;overflow:auto}
+    .muted{color:#94a3b8}
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Phase 4.6.3 — Runtime Validation</h1>
+    <p class="muted">Non-destructive governance validation. Load the integrated Phase 4.2 → 4.6.2 application before running the harness.</p>
+    <button id="run">Run Validation</button>
+    <pre id="output">Waiting for validation…</pre>
+  </div>
+</main>
+<script src="phase4.6.3-runtime-validation.js"></script>
+<script>
+  document.getElementById('run').addEventListener('click', function(){
+    if (typeof window.runPhase463RuntimeValidation !== 'function') {
+      document.getElementById('output').textContent = 'Runtime harness unavailable.';
+      return;
+    }
+    const result = window.runPhase463RuntimeValidation();
+    document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+  });
+</script>
+</body>
+</html>

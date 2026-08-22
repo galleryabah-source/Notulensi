@@ -1,0 +1,159 @@
+name: Phase 17-E Production Readiness Evidence
+on:
+  push:
+    branches: [phase17-execution-evidence, phase17-production-evidence-gate]
+  pull_request:
+    branches: [phase17-execution-evidence]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phase17-evidence-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  evidence:
+    name: Static validation and evidence collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: phase17_evidence
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d phase17_evidence"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NODE_ENV: test
+      EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/evidence-report.json
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/phase17_evidence
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: phase17_evidence
+      JWT_SECRET: phase17-r2-2-controlled-test-secret-DO-NOT-USE-IN-PRODUCTION-2026
+      AUTH_ISSUER: phase17-test-issuer
+      AUTH_AUDIENCE: phase17-test-audience
+      R2_2_PORT: 4182
+      R2_3_PORT: 4183
+      R2_4_PORT: 4184
+      AI_PROVIDER: controlled-test-provider
+      AI_MODEL: controlled-test-model-v1
+      AI_INPUT_RATE: 0.000001
+      AI_OUTPUT_RATE: 0.000002
+      AI_QUOTA_TOKENS: 1000
+      AI_BUDGET_ALERT_USD: 0.000003
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with: {fetch-depth: 1}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - name: Install runtime dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify Git identity
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          echo "CI_COMMIT=$actual"
+          test "$actual" = "${GITHUB_SHA}"
+      - name: Validate Phase 17 JavaScript syntax
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(phase17*.js phase17-execution/*.mjs server/*.mjs server/*.js)
+          test "${#files[@]}" -gt 0
+          for file in "${files[@]}"; do node --check "$file"; done
+      - name: Verify PostgreSQL client
+        run: |
+          set -euo pipefail
+          psql --version
+          pg_isready --host "$PGHOST" --port "$PGPORT" --username "$PGUSER" --dbname "$PGDATABASE"
+      - name: Execute real database runtime harness
+        continue-on-error: true
+        run: node phase17-execution/database-runtime-harness.mjs
+      - name: Execute ephemeral application runtime health harness
+        continue-on-error: true
+        run: node phase17-execution/runtime-health-harness.mjs
+      - name: Execute R2.2 authentication and RBAC runtime harness
+        continue-on-error: true
+        run: node phase17-execution/r2.2-auth-runtime-harness.mjs
+      - name: Execute current Phase 17 RBAC compatibility harness
+        continue-on-error: true
+        run: node phase17-execution/r2.2-rbac-compatibility-harness.mjs
+      - name: Execute R2.3 security regression runtime harness
+        continue-on-error: true
+        run: node phase17-execution/r2.3-security-runtime-harness.mjs
+      - name: Execute R2.4 AI provider and cost-control runtime harness
+        continue-on-error: true
+        run: node phase17-execution/r2.4-ai-cost-runtime-harness.mjs
+      - name: Execute observability runtime harness
+        continue-on-error: true
+        run: node phase17-execution/observability-runtime-harness.mjs
+      - name: Execute backup and restore runtime drill
+        continue-on-error: true
+        run: node phase17-execution/backup-restore-runtime-harness.mjs
+      - name: Execute disaster recovery runtime drill
+        continue-on-error: true
+        run: node phase17-execution/dr-runtime-harness.mjs
+      - name: Execute performance and load runtime harness
+        continue-on-error: true
+        run: node phase17-execution/performance-runtime-harness.mjs
+      - name: Execute controlled release canary and rollback runtime drill
+        continue-on-error: true
+        run: node phase17-execution/release-runtime-harness.mjs
+      - name: Run evidence collector
+        continue-on-error: true
+        run: node phase17-execution/evidence-collector.mjs
+      - name: Run fail-closed readiness aggregation
+        run: |
+          set +e
+          node phase17-execution/readiness-aggregator.mjs > phase17-execution/readiness-result.json
+          status=$?
+          set -e
+          cat phase17-execution/readiness-result.json
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
+      - name: Run schema-backed production evidence gate (fail-closed)
+        run: |
+          set +e
+          node phase17-execution/production-evidence-gate.mjs > phase17-execution/production-evidence-gate.json
+          status=$?
+          set -e
+          cat phase17-execution/production-evidence-gate.json
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
+      - name: Classify blockers
+        run: |
+          set +e
+          node phase17-execution/blocker-classifier.mjs > phase17-execution/blockers.json
+          status=$?
+          set -e
+          cat phase17-execution/blockers.json
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
+      - name: Upload Phase 17 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase17-evidence-${{ github.sha }}
+          path: |
+            phase17-execution/database-runtime.json
+            phase17-execution/runtime-health.json
+            phase17-execution/r2.2-auth-runtime.json
+            phase17-execution/r2.2-rbac-compatibility.json
+            phase17-execution/r2.3-security-runtime.json
+            phase17-execution/r2.4-ai-runtime.json
+            phase17-execution/observability-runtime.json
+            phase17-execution/backup-runtime.json
+            phase17-execution/dr-runtime.json
+            phase17-execution/performance-runtime.json
+            phase17-execution/release-runtime.json
+            phase17-execution/evidence-report.json
+            phase17-execution/readiness-result.json
+            phase17-execution/production-evidence-gate.json
+            phase17-execution/blockers.json
+          if-no-files-found: error
+          retention-days: 14
