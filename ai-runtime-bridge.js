@@ -22,6 +22,7 @@
     if(s.config[s.provider].model)next.model=s.config[s.provider].model;
     const changed=JSON.stringify(current)!==JSON.stringify(next);
     if(changed)write(LEGACY_KEY,next);
+    try{if(typeof window.loadSettings==='function')window.loadSettings();if(typeof window.updateApiBadge==='function')window.updateApiBadge()}catch(e){console.warn('Legacy AI runtime refresh failed:',e)}
     return changed;
   }
   function applyBadge(el,s){
