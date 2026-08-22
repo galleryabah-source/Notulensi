@@ -12,38 +12,26 @@
   function schemaInstruction(schema){return `\n\nIMPORTANT OUTPUT CONTRACT: Return ONLY valid JSON. It must conform to this JSON schema: ${JSON.stringify(schema)}. Do not use Markdown fences. Do not add commentary.`}
   async function serverGenerate(prompt,schema){
     const fullPrompt=String(prompt||'')+(schema?schemaInstruction(schema):'');
-    const r=await originalFetch('./api/ai-runtime',{method:'POST',headers:{'content-type':'application/json'},credentials:'include',cache:'no-store',body:JSON.stringify({prompt:fullPrompt,provider:'gemini'})});
+    const r=await originalFetch('./api/intelligence-generate',{method:'POST',headers:{'content-type':'application/json'},credentials:'include',cache:'no-store',body:JSON.stringify({prompt:fullPrompt,provider:'gemini'})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(d.error||`Server AI gagal (HTTP ${r.status})`);
-    const text=String(d.text||'').trim();
-    if(!text)throw new Error('Server AI mengembalikan respons kosong.');
-    return text;
+    const text=String(d.text||'').trim();if(!text)throw new Error('Server AI mengembalikan respons kosong.');return text;
   }
   async function routedFetch(input,init){
     const url=typeof input==='string'?input:(input?.url||'');
     if(!/generativelanguage\.googleapis\.com\/v1beta\/models\/[^/]+:generateContent/i.test(url))return originalFetch(input,init);
-    const body=extractBody(init);
-    const prompt=extractPrompt(body);
-    if(!prompt)return originalFetch(input,init);
+    const body=extractBody(init);const prompt=extractPrompt(body);if(!prompt)return originalFetch(input,init);
     try{return jsonResponse(await serverGenerate(prompt,hasSchema(body)?body.generationConfig.responseSchema:null),200)}catch(e){return jsonResponse(JSON.stringify({error:{message:e.message}}),502)}
   }
   async function activate(){
-    if(installed)return;
-    installed=true;
-    try{
-      const current=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');
-      current.apiKey=SERVER_KEY;
-      localStorage.setItem(SETTINGS_KEY,JSON.stringify(current));
-      if(typeof window.loadSettings==='function')window.loadSettings();
-    }catch(e){console.warn('server AI compatibility settings:',e)}
+    if(installed)return;installed=true;
+    try{const current=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');current.apiKey=SERVER_KEY;localStorage.setItem(SETTINGS_KEY,JSON.stringify(current));if(typeof window.loadSettings==='function')window.loadSettings()}catch(e){console.warn('server AI compatibility settings:',e)}
     window.fetch=routedFetch;
-    const badge=document.getElementById('apiStatusBadge');
-    if(badge){badge.textContent='AI Online · Server Gemini';badge.className='px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}
+    const badge=document.getElementById('apiStatusBadge');if(badge){badge.textContent='AI Online · Server Gemini';badge.className='px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}
     const keyField=document.getElementById('customApiKey');if(keyField){keyField.value='';const row=keyField.closest('label');if(row)row.style.display='none'}
     const settingsButton=Array.from(document.querySelectorAll('button')).find(b=>/⚙️\s*Pengaturan|Pengaturan/.test(b.textContent||''));if(settingsButton)settingsButton.style.display='none';
     try{const r=await originalFetch('./api/ai-runtime',{cache:'no-store'});const d=await r.json();if(!d.healthy)console.warn('Server AI is not healthy:',d)}catch(e){console.warn('Server AI health check failed:',e)}
   }
   window.notulensiServerAICompat={activate,serverGenerate};
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(activate,100),{once:true});else setTimeout(activate,100);
-  setTimeout(activate,500);setTimeout(activate,1500);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(activate,100),{once:true});else setTimeout(activate,100);setTimeout(activate,500);setTimeout(activate,1500);
 })();
