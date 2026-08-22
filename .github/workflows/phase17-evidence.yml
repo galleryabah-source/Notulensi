@@ -39,6 +39,11 @@ jobs:
       NODE_ENV: test
       EVIDENCE_OUTPUT: ${{ github.workspace }}/phase17-execution/evidence-report.json
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/phase17_evidence
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: phase17_evidence
       JWT_SECRET: phase17-r2-2-controlled-test-secret-DO-NOT-USE-IN-PRODUCTION-2026
       AUTH_ISSUER: phase17-test-issuer
       AUTH_AUDIENCE: phase17-test-audience
@@ -78,6 +83,18 @@ jobs:
             echo "Checking $file"
             node --check "$file"
           done
+
+      - name: Verify PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql --version
+          pg_isready --host "$PGHOST" --port "$PGPORT" --username "$PGUSER" --dbname "$PGDATABASE"
+
+      - name: Execute real database runtime harness
+        shell: bash
+        continue-on-error: true
+        run: node phase17-execution/database-runtime-harness.mjs
 
       - name: Execute ephemeral application runtime health harness
         shell: bash
@@ -125,6 +142,7 @@ jobs:
         with:
           name: phase17-evidence-${{ github.sha }}
           path: |
+            phase17-execution/database-runtime.json
             phase17-execution/runtime-health.json
             phase17-execution/r2.2-auth-runtime.json
             phase17-execution/r2.2-rbac-compatibility.json
