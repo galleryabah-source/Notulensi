@@ -16,14 +16,18 @@
     premium:{enabled:false,upgradeUrl:'',benefits:[]},
     privacy:{privacyUrl:'./privacy-policy.html',termsUrl:'./terms.html'}
   };
-  function read(){try{return JSON.parse(localStorage.getItem('notulensi_monetization_overrides_v1')||'null')}catch{return null}}
-  function merge(){const o=read()||{};const a=o.affiliate||{};const p=o.privacy||{};return {
+  function merge(o){o=o||{};return {
     enabled:base.enabled,
-    adsense:base.adsense,
-    affiliate:{...base.affiliate,...a,items:Array.isArray(a.items)?a.items:base.affiliate.items},
-    premium:base.premium,
-    privacy:{...base.privacy,...p}
+    adsense:{...base.adsense,...(o.adsense||{})},
+    affiliate:{...base.affiliate,...(o.affiliate||{}),items:Array.isArray(o.affiliate?.items)?o.affiliate.items:base.affiliate.items},
+    premium:{...base.premium,...(o.premium||{})},
+    privacy:{...base.privacy,...(o.privacy||{})}
   }}
-  window.NOTULENSI_MONETIZATION=Object.freeze(merge());
+  function publish(cfg){window.NOTULENSI_MONETIZATION=Object.freeze(merge(cfg));window.dispatchEvent(new CustomEvent('notulensi:monetization-ready'))}
+  publish(base);
   window.NOTULENSI_MONETIZATION_DEFAULTS=Object.freeze(base);
+  window.NOTULENSI_MONETIZATION_READY=fetch('./api/monetization-config',{credentials:'omit',cache:'no-store'})
+    .then(r=>r.ok?r.json():Promise.reject(new Error('monetization-config '+r.status)))
+    .then(d=>{publish(d.config);return d.config})
+    .catch(()=>window.NOTULENSI_MONETIZATION);
 })();
