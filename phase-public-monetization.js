@@ -1,54 +1,11 @@
 (function(){
   'use strict';
-
-  function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-  function css(){
-    if(document.getElementById('notulensiAffiliateStyle'))return;
-    const s=document.createElement('style');s.id='notulensiAffiliateStyle';s.textContent=`
-      .nm-affiliate{margin:16px 0;padding:14px;border:1px solid rgba(100,116,139,.28);border-radius:12px;background:rgba(15,23,42,.76)}
-      .nm-affiliate h4{margin:0;color:#e2e8f0;font:700 13px/1.3 Inter,system-ui,sans-serif}
-      .nm-affiliate p{margin:5px 0 0;color:#94a3b8;font:11px/1.5 Inter,system-ui,sans-serif}
-      .nm-affiliate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
-      .nm-aff-card{padding:11px;border:1px solid rgba(100,116,139,.25);border-radius:9px;background:#020617;min-width:0}
-      .nm-aff-card b{display:block;color:#cbd5e1;font:600 12px/1.3 Inter,system-ui,sans-serif}
-      .nm-aff-card span{display:block;color:#64748b;font:10px/1.4 Inter,system-ui,sans-serif;margin-top:4px}
-      .nm-aff-card a,.nm-aff-card button{display:inline-flex;margin-top:8px;padding:7px 10px;border-radius:7px;border:1px solid #334155;background:#1e293b;color:#dbeafe;text-decoration:none;font:600 10px Inter,system-ui,sans-serif;cursor:pointer}
-      .nm-aff-card a:hover,.nm-aff-card button:hover{background:#334155}
-      .nm-aff-card button[disabled]{opacity:.55;cursor:not-allowed}
-      .nm-aff-tag{display:inline-flex;margin-top:8px;padding:3px 6px;border:1px solid rgba(96,165,250,.25);border-radius:5px;color:#93c5fd;font:700 9px system-ui,sans-serif;letter-spacing:.03em}
-      .nm-aff-status{display:block;margin-top:8px;color:#fbbf24;font:10px/1.4 Inter,system-ui,sans-serif}
-      @media(max-width:900px){.nm-affiliate-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.nm-affiliate-grid{grid-template-columns:1fr}}
-    `;document.head.appendChild(s);
-  }
+  function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function css(){if(document.getElementById('notulensiAffiliateStyle'))return;const s=document.createElement('style');s.id='notulensiAffiliateStyle';s.textContent=`.nm-affiliate{margin:16px 0;padding:14px;border:1px solid rgba(100,116,139,.28);border-radius:12px;background:rgba(15,23,42,.76)}.nm-affiliate h4{margin:0;color:#e2e8f0;font:700 13px/1.3 Inter,system-ui,sans-serif}.nm-affiliate p{margin:5px 0;color:#94a3b8;font:11px/1.5 Inter,system-ui,sans-serif}.nm-affiliate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.nm-aff-card{min-width:0;overflow:hidden;border:1px solid rgba(100,116,139,.25);border-radius:11px;background:#020617}.nm-aff-image{display:block;width:100%;aspect-ratio:2.5/1;object-fit:cover;background:#0f172a}.nm-aff-caption{padding:9px 10px}.nm-aff-caption b{display:block;color:#cbd5e1;font:600 12px/1.3 Inter,system-ui,sans-serif}.nm-aff-caption span{display:block;color:#64748b;font:10px/1.4 Inter,system-ui,sans-serif;margin-top:4px}.nm-aff-caption a{display:inline-flex;margin-top:7px;padding:6px 9px;border-radius:7px;border:1px solid #334155;background:#1e293b;color:#dbeafe;text-decoration:none;font:600 10px Inter,system-ui,sans-serif}.nm-aff-tag{display:inline-flex;margin-top:3px;padding:3px 6px;border:1px solid rgba(96,165,250,.25);border-radius:5px;color:#93c5fd;font:700 9px system-ui,sans-serif}.nm-aff-status{color:#fbbf24;font:10px/1.4 Inter,system-ui,sans-serif}@media(max-width:900px){.nm-affiliate-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.nm-affiliate-grid{grid-template-columns:1fr}}`;document.head.appendChild(s)}
   const ADVANCED_MODULES=['intelTab','dashboardTab','crossMeetingTab','continuityTab','knowledgeGraphTab','reportTab','docsTab','historyTab'];
-  function getItems(){const aff=window.NOTULENSI_MONETIZATION?.affiliate||{};return (aff.items||[]).filter(x=>x).slice(0,3)}
-  function affiliateBlock(parent){
-    const aff=window.NOTULENSI_MONETIZATION?.affiliate||{};
-    if(!aff.enabled||!parent||parent.querySelector(':scope > #nmAffiliateBlock'))return;
-    const items=getItems();if(!items.length)return;
-    const box=document.createElement('section');box.id='nmAffiliateBlock';box.className='nm-affiliate';
-    box.innerHTML=`<h4>🛍️ Rekomendasi pendukung fitur ini</h4><p>${esc(aff.disclosure||'Rekomendasi afiliasi.')}</p><span class="nm-aff-tag">SHOPEE AFFILIATE</span><div class="nm-affiliate-grid"></div>`;
-    const grid=box.querySelector('.nm-affiliate-grid');
-    items.forEach(x=>{
-      const card=document.createElement('div');card.className='nm-aff-card';
-      const title=document.createElement('b');title.textContent=x.title||'Rekomendasi';
-      const desc=document.createElement('span');desc.textContent=x.description||'';
-      card.append(title,desc);
-      if(x.url){
-        const a=document.createElement('a');a.href=x.url;a.target='_blank';a.rel='nofollow sponsored noopener';a.dataset.affiliateId=x.id||'';a.textContent=x.label||'Lihat rekomendasi';card.appendChild(a);
-      }else{
-        const b=document.createElement('button');b.type='button';b.disabled=true;b.textContent='Menunggu konfigurasi affiliate';card.appendChild(b);
-        const st=document.createElement('small');st.className='nm-aff-status';st.textContent='Link affiliate belum dikonfigurasi oleh Admin.';card.appendChild(st);
-      }
-      grid.appendChild(card);
-    });
-    parent.appendChild(box);
-  }
-  function decorateAdvancedModules(){css();ADVANCED_MODULES.forEach(id=>affiliateBlock(document.getElementById(id)));}
-  window.NOTULENSI_MONETIZATION_API={refresh:decorateAdvancedModules,isAffiliateOnly:()=>true};
-  const ready=window.NOTULENSI_MONETIZATION_READY||Promise.resolve();
-  ready.finally(()=>{decorateAdvancedModules();setTimeout(decorateAdvancedModules,50)});
-  window.addEventListener('notulensi:monetization-ready',decorateAdvancedModules);
-  window.addEventListener('load',()=>setTimeout(decorateAdvancedModules,50),{once:true});
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(decorateAdvancedModules,50),{once:true});
+  function getItems(){const a=window.NOTULENSI_MONETIZATION?.affiliate||{};return(a.items||[]).filter(x=>x&&x.url).slice(0,3)}
+  function affiliateBlock(parent){const a=window.NOTULENSI_MONETIZATION?.affiliate||{};if(!a.enabled||!parent||parent.querySelector(':scope > #nmAffiliateBlock'))return;const items=getItems();if(!items.length)return;const box=document.createElement('section');box.id='nmAffiliateBlock';box.className='nm-affiliate';box.innerHTML=`<h4>🛍️ Rekomendasi pendukung fitur ini</h4><p>${esc(a.disclosure||'Rekomendasi afiliasi.')}</p><span class="nm-aff-tag">${esc(a.network||'AFFILIATE')}</span><div class="nm-affiliate-grid"></div>`;const grid=box.querySelector('.nm-affiliate-grid');items.forEach(x=>{const card=document.createElement('article');card.className='nm-aff-card';const link=document.createElement('a');link.href=x.url;link.target='_blank';link.rel='nofollow sponsored noopener';link.dataset.affiliateId=x.id||'';const img=document.createElement('img');img.className='nm-aff-image';img.alt=x.title||'Rekomendasi afiliasi';img.loading='lazy';img.src=`./api/affiliate-ad?id=${encodeURIComponent(x.id||'')}`;link.appendChild(img);card.appendChild(link);const cap=document.createElement('div');cap.className='nm-aff-caption';cap.innerHTML=`<b>${esc(x.title||'Rekomendasi')}</b><span>${esc(x.description||'')}</span>`;const cta=document.createElement('a');cta.href=x.url;cta.target='_blank';cta.rel='nofollow sponsored noopener';cta.textContent=x.label||'Lihat rekomendasi';cap.appendChild(cta);card.appendChild(cap);grid.appendChild(card)});parent.appendChild(box)}
+  function decorate(){css();ADVANCED_MODULES.forEach(id=>affiliateBlock(document.getElementById(id)));}
+  window.NOTULENSI_MONETIZATION_API={refresh:decorate,isAffiliateOnly:()=>true,renderAffiliateAds:decorate};
+  const ready=window.NOTULENSI_MONETIZATION_READY||Promise.resolve();ready.finally(()=>{decorate();setTimeout(decorate,100)});window.addEventListener('notulensi:monetization-ready',decorate);window.addEventListener('load',()=>setTimeout(decorate,100),{once:true});document.addEventListener('DOMContentLoaded',()=>setTimeout(decorate,100),{once:true});
 })();
