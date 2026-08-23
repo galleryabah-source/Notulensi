@@ -69,6 +69,8 @@ jobs:
           files=(api/*.js phase*.js phase17-execution/*.mjs server/*.mjs server/*.js source-transcription-engine.js)
           test "${#files[@]}" -gt 0
           for file in "${files[@]}"; do node --check "$file"; done
+      - name: Verify production configuration safety rules
+        run: node phase17-execution/production-config-safety.mjs
       - name: Verify PostgreSQL client
         run: |
           set -euo pipefail
