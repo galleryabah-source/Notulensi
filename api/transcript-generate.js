@@ -8,6 +8,7 @@ export default async function handler(req,res){
   try{
     client=await db().connect(); await ensureTable(client);
     const provider=await resolveProvider(client,req.body?.provider||null);
+    if(!provider.configured && provider.id==='gemini' && process.env.GEMINI_API_KEY){provider.configured=true;provider.key=process.env.GEMINI_API_KEY;}
     if(!provider.configured) return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:provider.id,model:provider.model});
     const source=String(req.body?.transcript||req.body?.source||'').trim();
     if(!source) return res.status(400).json({error:'Transcript source is required.'});

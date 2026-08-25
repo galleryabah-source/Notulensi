@@ -1,0 +1,24 @@
+name: Production Entrypoint Regression Guard
+on:
+  push:
+    branches: [main, r3-production-stabilization]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  entrypoint-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify production entrypoint wiring
+        run: node phase17-execution/production-entrypoint-regression.mjs
