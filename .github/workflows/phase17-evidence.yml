@@ -1,9 +1,9 @@
 name: Phase 17-E Production Readiness Evidence
 on:
   push:
-    branches: [phase17-execution-evidence, phase17-production-evidence-gate]
+    branches: [audit-2026-08-22-production-hardening, phase17-execution-evidence, phase17-production-evidence-gate]
   pull_request:
-    branches: [phase17-execution-evidence]
+    branches: [main, phase17-execution-evidence]
   workflow_dispatch:
 permissions:
   contents: read
@@ -134,6 +134,9 @@ jobs:
           set -e
           cat phase17-execution/blockers.json
           if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
+      - name: Run production environment preflight contract
+        if: always()
+        run: node phase17-execution/production-preflight.mjs
       - name: Upload Phase 17 evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -155,5 +158,6 @@ jobs:
             phase17-execution/readiness-result.json
             phase17-execution/production-evidence-gate.json
             phase17-execution/blockers.json
+            phase17-execution/production-preflight.json
           if-no-files-found: error
           retention-days: 14
