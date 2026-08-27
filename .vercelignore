@@ -1,0 +1,13 @@
+# Notulensi Lite preview: deploy as static-only Vercel preview.
+# Backend/API and runtime harnesses are intentionally excluded from this preview
+# so the preview does not consume Vercel Serverless Function slots.
+api/**
+server/**
+phase17-execution/**
+local-ai-bridge/**
+node_modules/**
+.git/**
+.github/**
+cloudflare/**
+wrangler.jsonc
+wrangler.toml
