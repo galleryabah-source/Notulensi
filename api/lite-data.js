@@ -1,4 +1,4 @@
-import { requireAdmin } from './_admin-auth.js';
+import { requireAdmin } from '../server/admin-auth.js';
 import { readLite, writeLite } from '../server/lite-backend.js';
 
 const buckets = new Map();
