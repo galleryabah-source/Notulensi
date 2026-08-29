@@ -23,7 +23,7 @@
     if(!navigator.mediaDevices?.getUserMedia) throw new Error('MICROPHONE_API_UNAVAILABLE');
     if(!window.MediaRecorder) throw new Error('MEDIA_RECORDER_UNAVAILABLE');
     state.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    const type=mime(); state.chunks=[]; state.id=`rec_${Date.now()}_${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
+    const type=mime(); state.chunks=[]; state.elapsedBefore=0; state.startedAt=0; state.id=`rec_${Date.now()}_${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
     state.recorder=new MediaRecorder(state.stream,type?{mimeType:type}:undefined);
     state.recorder.ondataavailable=e=>{if(e.data?.size)state.chunks.push(e.data)};
     state.recorder.onerror=e=>emit('error',{error:e.error||new Error('RECORDER_ERROR')});
@@ -31,16 +31,35 @@
     state.recorder.onpause=()=>{state.elapsedBefore+=Date.now()-state.startedAt;state.startedAt=0;emit('state',{status:'paused',id:state.id});tick();};
     state.recorder.onresume=()=>{state.startedAt=Date.now();emit('state',{status:'recording',id:state.id});};
     state.recorder.onstop=async()=>{
-      if(state.startedAt)state.elapsedBefore+=Date.now()-state.startedAt; state.startedAt=0; if(state.timer)clearInterval(state.timer); state.timer=null;
-      const blob=new Blob(state.chunks,{type:state.recorder.mimeType||type||'audio/webm'});
-      const meta={id:state.id,mimeType:blob.type,size:blob.size,durationMs:state.elapsedBefore,createdAt:new Date().toISOString(),blob};
-      await put(state.id,meta); state.stream?.getTracks().forEach(t=>t.stop()); state.stream=null; state.recorder=null; state.chunks=[]; emit('stopped',meta); tick();
+      try {
+        if(state.startedAt)state.elapsedBefore+=Date.now()-state.startedAt;
+        state.startedAt=0; if(state.timer)clearInterval(state.timer); state.timer=null;
+        const blob=new Blob(state.chunks,{type:state.recorder.mimeType||type||'audio/webm'});
+        const meta={id:state.id,mimeType:blob.type,size:blob.size,durationMs:state.elapsedBefore,createdAt:new Date().toISOString(),blob};
+        await put(state.id,meta);
+        state.stream?.getTracks().forEach(t=>t.stop()); state.stream=null; state.recorder=null; state.chunks=[];
+        emit('stopped',meta); tick();
+        state.finalized=meta;
+        return meta;
+      } catch (error) {
+        emit('error',{error});
+        throw error;
+      }
     };
     state.recorder.start(1000);
   }
   function pause(){if(state.recorder?.state==='recording')state.recorder.pause();}
   function resume(){if(state.recorder?.state==='paused')state.recorder.resume();}
-  function stop(){if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();}
+  function stop(){
+    if(!state.recorder||state.recorder.state==='inactive')return Promise.resolve(state.finalized||null);
+    return new Promise((resolve,reject)=>{
+      const onStopped=e=>{window.removeEventListener('notulensi:lite:stopped',onStopped);window.removeEventListener('notulensi:lite:error',onError);resolve(e.detail)};
+      const onError=e=>{window.removeEventListener('notulensi:lite:stopped',onStopped);window.removeEventListener('notulensi:lite:error',onError);reject(e.detail?.error||new Error('RECORDER_FINALIZE_FAILED'))};
+      window.addEventListener('notulensi:lite:stopped',onStopped,{once:true});
+      window.addEventListener('notulensi:lite:error',onError,{once:true});
+      state.recorder.stop();
+    });
+  }
   async function getRecording(id){return get(id);}
   async function removeRecording(id){return remove(id);}
   function download(recording){if(!recording?.blob)throw new Error('RECORDING_NOT_FOUND');const url=URL.createObjectURL(recording.blob);const a=document.createElement('a');a.href=url;a.download=`notulensi-${recording.id}.${recording.mimeType.includes('mp4')?'mp4':'webm'}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
