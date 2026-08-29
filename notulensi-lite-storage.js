@@ -1,16 +1,1 @@
-(() => {
-  'use strict';
-  const KEY = 'notulensi:lite:v1';
-  const storage = {
-    read() {
-      try { return JSON.parse(localStorage.getItem(KEY) || '{}'); }
-      catch (_) { return {}; }
-    },
-    write(value) {
-      localStorage.setItem(KEY, JSON.stringify(value));
-      return true;
-    },
-    clear() { localStorage.removeItem(KEY); }
-  };
-  window.notulensiLiteStorage = Object.freeze(storage);
-})();
+(() => {'use strict';const KEY='notulensi:lite:v2';const storage={read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return {}}},write(value){try{localStorage.setItem(KEY,JSON.stringify(value));return true}catch{return false}},clear(){try{localStorage.removeItem(KEY)}catch{}}};window.notulensiLiteStorage=Object.freeze(storage)})();
