@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const root = new URL('..', import.meta.url);
+const read = name => fs.readFileSync(new URL(name, root), 'utf8');
+const html = read('notulensi-lite.html');
+const app = read('notulensi-lite.js');
+const recorder = read('notulensi-lite-recorder.js');
+const transcription = read('notulensi-lite-transcription.js');
+
+assert.match(html, /notulensi-lite-recorder\.js/);
+assert.match(html, /notulensi-lite-transcription\.js/);
+assert.match(html, /Segoe UI Variable/);
+assert.match(html, /backdrop-filter/);
+assert.doesNotMatch(html + app, /Rekap Rapat|Summary AI|Action Items|Agenda|Kesimpulan/i);
+assert.match(recorder, /getUserMedia/);
+assert.match(recorder, /MediaRecorder/);
+assert.match(recorder, /indexedDB/);
+assert.match(recorder, /echoCancellation:true/);
+assert.match(recorder, /noiseSuppression:true/);
+assert.match(recorder, /autoGainControl:true/);
+assert.match(transcription, /SpeechRecognition|webkitSpeechRecognition/);
+assert.match(transcription, /id-ID/);
+assert.match(transcription, /interimResults=true/);
+assert.match(transcription, /isFinal/);
+assert.match(transcription, /processLocally/);
+assert.match(transcription, /available/);
+assert.doesNotMatch(recorder + transcription + app, /openai|gemini|ai-provider|transcript-generate/i);
+assert.match(app, /\/api\/lite-data\.js/);
+assert.match(app, /\/api\/admin-session\.js/);
+console.log('PASS — Notulensi Lite runtime contract');
