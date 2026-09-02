@@ -1,0 +1,48 @@
+name: Notulensi Lite Solid Gate
+
+on:
+  push:
+    branches:
+      - fix/lite-solid-core
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'notulensi-lite.html'
+      - 'notulensi-lite.js'
+      - 'notulensi-lite-*.js'
+      - 'api/admin-login.js'
+      - 'api/lite-data.js'
+      - 'server/lite-backend.js'
+      - 'tests/notulensi-lite-solid-gate.mjs'
+      - '.github/workflows/notulensi-lite-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notulensi-lite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  solid-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in notulensi-lite.js notulensi-lite-recorder.js notulensi-lite-storage.js notulensi-lite-transcription.js api/admin-login.js api/lite-data.js server/lite-backend.js tests/notulensi-lite-solid-gate.mjs; do
+            node --check "$file"
+          done
+      - name: Run Lite solid release gate
+        run: node tests/notulensi-lite-solid-gate.mjs
