@@ -2,81 +2,91 @@
 
 ## Arsitektur
 
-Browser → Notulensi server lokal → Ollama (`http://127.0.0.1:11434`) → model lokal.
+Browser → Notulensi server → HTTPS AI Gateway → Ollama (`127.0.0.1:11434`) → `gemma3:1b`.
 
-Ini adalah mode **local-first**. Tidak ada API key AI dan tidak ada quota provider cloud. Batas praktisnya adalah kemampuan perangkat (CPU/RAM/GPU) dan model yang dipasang.
+Ollama tetap localhost-only. Gateway menjadi satu-satunya endpoint yang boleh menerima request dari Notulensi.
 
-## Windows
+## Windows — Ollama
 
-1. Install Ollama dari https://ollama.com/download.
-2. Buka PowerShell baru dan verifikasi:
-
-```powershell
-ollama --version
-```
-
-3. Tarik model default:
-
-```powershell
-ollama pull qwen2.5:7b
-```
-
-4. Verifikasi:
+1. Verifikasi Ollama:
 
 ```powershell
 ollama list
 ```
 
-5. Tes API:
+2. Pastikan model tersedia:
 
 ```powershell
-$body = @{ model = 'qwen2.5:7b'; messages = @(@{ role = 'user'; content = 'Reply with exactly OK.' }); stream = $false } | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:11434/api/chat' -ContentType 'application/json' -Body $body
+ollama run gemma3:1b
 ```
 
-Ollama menyediakan API lokal di port 11434 dan dapat berjalan tanpa layanan AI cloud. Untuk Windows, aplikasi Ollama menjalankan API di background.
+3. Verifikasi API lokal:
 
-## Menjalankan Notulensi dengan Local AI
+```powershell
+Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags'
+```
 
-**Penting:** deployment Vercel tidak dapat mengakses `127.0.0.1` milik komputer pengguna. Untuk benar-benar memakai model lokal, jalankan backend/Notulensi dari komputer yang sama dengan Ollama, atau gunakan endpoint jaringan privat yang dapat dijangkau server aplikasi. Jangan mengekspos port Ollama ke internet tanpa pengamanan.
+Jangan membuka port `11434` ke internet.
 
-Environment lokal:
+## AI Gateway
+
+Gateway lokal mendengarkan pada:
 
 ```text
-LOCAL_AI_BASE_URL=http://127.0.0.1:11434
+http://127.0.0.1:8787
 ```
 
-Provider:
+Health check:
+
+```powershell
+Invoke-RestMethod -Uri 'http://127.0.0.1:8787/health'
+```
+
+Gateway hanya mengizinkan model `gemma3:1b`, membatasi request ke endpoint chat, dan memerlukan Bearer token.
+
+Environment gateway:
 
 ```text
-ollama
+NOTULENSI_AI_TOKEN=<secret>
 ```
 
-Model:
+Token harus disimpan sebagai environment variable dan tidak boleh ditulis ke source code, database, browser, log, atau chat.
+
+## Notulensi Full — environment server
+
+Untuk deployment Notulensi Full, gunakan environment variable berikut:
 
 ```text
-qwen2.5:7b
+LOCAL_AI_BASE_URL=https://<secure-gateway-host>
+LOCAL_AI_MODEL=gemma3:1b
+LOCAL_AI_GATEWAY_TOKEN=<secret-yang-sama-dengan-gateway>
 ```
 
-Tidak perlu API key.
+`LOCAL_AI_BASE_URL` harus menunjuk ke **AI Gateway**, bukan ke Ollama `:11434`.
 
-## Admin
+`LOCAL_AI_GATEWAY_TOKEN` hanya digunakan server-side oleh provider adapter. Jangan mengeksposnya ke browser.
 
-Buka Pengaturan AI sebagai Admin. Pilih:
+Environment variables tersebut dapat digunakan tanpa mengubah schema database atau menjalankan migration.
 
-- `Local AI — Ollama`
-- Base URL: `http://127.0.0.1:11434`
-- Model: `qwen2.5:7b`
+## Security boundary
 
-Klik **Simpan & Verifikasi**.
-
-Server akan menjalankan smoke test `Reply with exactly OK.` sebelum konfigurasi disimpan sebagai valid.
+- Ollama: `127.0.0.1:11434` only.
+- Gateway: `127.0.0.1:8787` secara lokal.
+- Internet hanya menuju Gateway melalui HTTPS/tunnel yang memiliki autentikasi.
+- Tidak ada akses browser langsung ke Ollama.
+- Jangan menaruh token di frontend, HTML, JavaScript client, atau database konfigurasi AI.
 
 ## Production
 
-Jika aplikasi tetap di Vercel, gunakan local AI hanya untuk development/local deployment. Untuk production, pilihan yang aman adalah:
+Untuk Vercel, server Notulensi tidak dapat mengakses `127.0.0.1` milik PC. Gunakan secure HTTPS tunnel atau jaringan privat yang dapat menjangkau Gateway.
 
-1. server aplikasi dan Ollama berada pada mesin/server privat yang sama; atau
-2. Ollama berada pada jaringan privat yang dapat dijangkau server aplikasi.
+Urutan deployment yang aman:
 
-Jangan mengubah `LOCAL_AI_BASE_URL` menjadi alamat publik tanpa autentikasi, TLS, dan pembatasan akses.
+1. Uji Gateway lokal.
+2. Uji endpoint HTTPS Gateway.
+3. Set `LOCAL_AI_BASE_URL`, `LOCAL_AI_MODEL`, dan `LOCAL_AI_GATEWAY_TOKEN` pada Preview Vercel.
+4. Jalankan smoke test dan regression test Preview.
+5. Verifikasi fitur AI pada Preview.
+6. Hanya setelah PASS, pertimbangkan Production.
+
+Tidak ada migration, `db:push`, atau perubahan schema yang diperlukan untuk integrasi ini.
