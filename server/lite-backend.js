@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 
 let pool;
 const KEY_PREFIX = 'notulensi:lite:v2:';
+const LEGACY_KEY_PREFIX = 'notulensi:lite:v1:';
 const MAX_BYTES = 512 * 1024;
 const MAX_SESSIONS = 100;
 const MAX_TEXT = 100000;
@@ -23,7 +24,7 @@ function normalizeSession(value, index) {
     title: text(value?.title, 240) || `Sesi ${index + 1}`,
     text: text(value?.text, MAX_TEXT),
     durationMs: Number.isFinite(Number(value?.durationMs)) ? Math.max(0, Math.min(Number(value.durationMs), 86400000)) : 0,
-    createdAt: text(value?.createdAt, 60),
+    createdAt: text(value?.createdAt, 60) || new Date().toISOString(),
     recordingId: text(value?.recordingId, 160),
     audioAvailable: Boolean(value?.audioAvailable)
   };
@@ -34,15 +35,25 @@ export function normalizeData(input) {
   if (Buffer.byteLength(JSON.stringify(data), 'utf8') > MAX_BYTES) throw new Error('Lite payload exceeds 512 KB.');
   return data;
 }
-export function keyFor(actor) {
+function keyForPrefix(actor, prefix) {
   const safe = String(actor?.sub || '').trim().toLowerCase();
   if (!safe || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safe)) throw new Error('Invalid Lite actor.');
-  return `${KEY_PREFIX}${Buffer.from(safe).toString('base64url')}`;
+  return `${prefix}${Buffer.from(safe).toString('base64url')}`;
+}
+export function keyFor(actor) { return keyForPrefix(actor, KEY_PREFIX); }
+function legacyToSessions(value) {
+  const transcripts = Array.isArray(value?.data?.transcripts) ? value.data.transcripts : [];
+  return normalizeData({ sessions: transcripts.map((t, i) => ({ id: text(t?.id, 120) || `legacy_${i + 1}`, title: t?.title, text: t?.body, createdAt: t?.updatedAt })) });
 }
 export async function readLite(actor) {
-  const result = await db().query('SELECT value FROM public.app_storage WHERE key=$1', [keyFor(actor)]);
-  const value = result.rows[0]?.value || { version: 0, data: { sessions: [] } };
-  return { version: Number(value.version || 0), data: normalizeData(value.data || {}) };
+  const current = await db().query('SELECT value FROM public.app_storage WHERE key=$1', [keyFor(actor)]);
+  if (current.rows[0]?.value) {
+    const value = current.rows[0].value;
+    return { version: Number(value.version || 0), data: normalizeData(value.data || {}) };
+  }
+  const legacy = await db().query('SELECT value FROM public.app_storage WHERE key=$1', [keyForPrefix(actor, LEGACY_KEY_PREFIX)]);
+  if (legacy.rows[0]?.value) return { version: 0, data: legacyToSessions(legacy.rows[0].value), migratedFrom: 'v1-transcripts' };
+  return { version: 0, data: { sessions: [] } };
 }
 export async function writeLite(actor, baseVersion, data) {
   if (!Number.isInteger(baseVersion) || baseVersion < 0) throw new Error('baseVersion is required.');
