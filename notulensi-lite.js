@@ -1,27 +1,268 @@
 (() => {
   'use strict';
-  const state = { meetings: [], transcripts: [], editing: null, backend: false, version: 0, syncing: false };
+
   const store = window.notulensiLiteStorage;
-  if (!store) throw new Error('NOTULENSI_LITE_STORAGE_UNAVAILABLE');
-  function localLoad(){const p=store.read();state.meetings=Array.isArray(p.meetings)?p.meetings:[];state.transcripts=Array.isArray(p.transcripts)?p.transcripts:[];}
-  function localSave(){store.write({meetings:state.meetings,transcripts:state.transcripts});}
-  async function api(path,options={}){const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(data.error||`HTTP_${r.status}`),{status:r.status,data});return data;}
-  async function hydrate(){try{const s=await api('/api/admin-session.js');if(!s.authenticated)return;const remote=await api('/api/lite-data.js');state.meetings=remote.data.meetings;state.transcripts=remote.data.transcripts;state.version=remote.version;state.backend=true;render();}catch{state.backend=false;}}
-  async function save(){localSave();if(!state.backend)return;state.syncing=true;render();try{const r=await api('/api/lite-data.js',{method:'PUT',headers:{'X-Notulensi-Lite-Request':'1'},body:JSON.stringify({baseVersion:state.version,data:{meetings:state.meetings,transcripts:state.transcripts}})});if(r.conflict){state.meetings=r.data.meetings;state.transcripts=r.data.transcripts;state.version=r.version;localSave();alert('Data berubah di sesi lain. Data server diprioritaskan.');}else state.version=r.version;}catch(error){alert(error.status===401?'Sesi admin berakhir. Data tersimpan lokal.':'Sinkronisasi backend gagal. Data tetap tersimpan lokal.');}finally{state.syncing=false;render();}}
-  function id(p){return `${p}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;}
-  const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-  function show(view){document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));const t=document.getElementById(view);if(t)t.classList.remove('hidden');document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));}
-  function render(){document.getElementById('meetingCount').textContent=state.meetings.length;document.getElementById('transcriptCount').textContent=state.transcripts.length;document.getElementById('meetingList').innerHTML=state.meetings.length?state.meetings.map(m=>`<article class="item" data-meeting="${m.id}"><span class="badge">Rekap</span><strong> ${esc(m.title||'Tanpa judul')}</strong><div class="muted">${esc(m.date||'')}</div><div>${esc(m.summary||m.agenda||'').slice(0,180)}</div></article>`).join(''):'<div class="empty">Belum ada rekap.</div>';document.getElementById('transcriptList').innerHTML=state.transcripts.length?state.transcripts.map(t=>`<article class="item" data-transcript="${t.id}"><span class="badge">Transkrip</span><strong> ${esc(t.title||'Tanpa judul')}</strong><div>${esc(t.body||'').slice(0,220)}</div></article>`).join(''):'<div class="empty">Belum ada transkrip.</div>';}
-  const clear=ids=>ids.forEach(x=>document.getElementById(x).value='');
-  document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.view)));
-  document.getElementById('newMeeting').onclick=()=>{clear(['mTitle','mDate','mParticipants','mAgenda','mSummary']);document.getElementById('meetingEditor').classList.remove('hidden');show('meetings');};
-  document.getElementById('cancelMeeting').onclick=()=>document.getElementById('meetingEditor').classList.add('hidden');
-  document.getElementById('saveMeeting').onclick=async()=>{const m={id:id('m'),title:document.getElementById('mTitle').value.trim(),date:document.getElementById('mDate').value,participants:document.getElementById('mParticipants').value.trim(),agenda:document.getElementById('mAgenda').value.trim(),summary:document.getElementById('mSummary').value.trim(),updatedAt:new Date().toISOString()};if(!m.title){alert('Judul rapat wajib diisi.');return;}state.meetings.unshift(m);await save();document.getElementById('meetingEditor').classList.add('hidden');};
-  document.getElementById('newTranscript').onclick=()=>{clear(['tTitle','tBody']);document.getElementById('transcriptEditor').classList.remove('hidden');show('transcripts');};
-  document.getElementById('cancelTranscript').onclick=()=>document.getElementById('transcriptEditor').classList.add('hidden');
-  document.getElementById('saveTranscript').onclick=async()=>{const t={id:id('t'),title:document.getElementById('tTitle').value.trim(),body:document.getElementById('tBody').value.trim(),updatedAt:new Date().toISOString()};if(!t.title||!t.body){alert('Judul dan isi transkrip wajib diisi.');return;}state.transcripts.unshift(t);await save();document.getElementById('transcriptEditor').classList.add('hidden');};
-  document.getElementById('searchBox').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),out=document.getElementById('searchResults');if(!q){out.textContent='Masukkan kata kunci untuk mencari.';return;}const rows=[...state.meetings.map(x=>({type:'Rekap',title:x.title,text:[x.participants,x.agenda,x.summary].join(' ')})),...state.transcripts.map(x=>({type:'Transkrip',title:x.title,text:x.body}))].filter(x=>(x.title+' '+x.text).toLowerCase().includes(q));out.innerHTML=rows.length?rows.map(x=>`<div class="item"><span class="badge">${x.type}</span><strong> ${esc(x.title)}</strong><div>${esc(x.text).slice(0,260)}</div></div>`).join(''):'Tidak ditemukan.';});
-  document.getElementById('meetingList').addEventListener('click',e=>{const el=e.target.closest('[data-meeting]');if(el){const m=state.meetings.find(x=>x.id===el.dataset.meeting);if(m)alert(`${m.title}\n\nPeserta: ${m.participants||'-'}\n\nAgenda:\n${m.agenda||'-'}\n\nKesimpulan:\n${m.summary||'-'}`);}});
-  document.getElementById('transcriptList').addEventListener('click',e=>{const el=e.target.closest('[data-transcript]');if(el){const t=state.transcripts.find(x=>x.id===el.dataset.transcript);if(t)alert(`${t.title}\n\n${t.body}`);}});
-  localLoad();render();hydrate();
+  const recorder = window.NotulensiLiteRecorder;
+  const transcription = window.NotulensiLiteTranscription;
+  if (!store || !recorder || !transcription) throw new Error('NOTULENSI_LITE_ENGINE_UNAVAILABLE');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  const state = { sessions: [], version: 0, backend: false, recording: false, paused: false, recordingId: null, durationMs: 0, finalizing: false };
+
+  function localLoad() {
+    const p = store.read();
+    state.sessions = Array.isArray(p.sessions) ? p.sessions : [];
+    state.version = Number.isInteger(Number(p.version)) && Number(p.version) >= 0 ? Number(p.version) : 0;
+  }
+
+  function localSave() {
+    if (!store.write({ sessions: state.sessions, version: state.version })) {
+      setMessage('Penyimpanan lokal penuh atau tidak tersedia. Unduh transkrip untuk cadangan.');
+    }
+  }
+
+  async function api(path, opt = {}) {
+    const r = await fetch(path, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      ...opt,
+      headers: { 'Content-Type': 'application/json', ...(opt.headers || {}) }
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(d.error || `HTTP_${r.status}`), { status: r.status, data: d });
+    return d;
+  }
+
+  function mergeSessions(remote) {
+    const byId = new Map();
+    for (const s of remote || []) if (s?.id) byId.set(s.id, s);
+    for (const s of state.sessions) if (s?.id && !byId.has(s.id)) byId.set(s.id, s);
+    state.sessions = [...byId.values()].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  }
+
+  async function hydrate() {
+    try {
+      const a = await api('/api/admin-session.js');
+      if (!a.authenticated) {
+        setMessage('Mode lokal aktif. Login Admin hanya diperlukan untuk sinkronisasi cloud.');
+        return;
+      }
+      const d = await api('/api/lite-data.js');
+      const localBefore = state.sessions.map((s) => s.id).filter(Boolean);
+      if (Array.isArray(d.data?.sessions)) mergeSessions(d.data.sessions);
+      state.version = Number(d.version) || 0;
+      state.backend = true;
+      await recoverAudioLinks();
+      renderHistory();
+      const localOnly = state.sessions.some((s) => !d.data.sessions?.some((r) => r.id === s.id));
+      if (localOnly && localBefore.length) await persist();
+      else setMessage('Sinkronisasi cloud aktif.');
+    } catch {
+      state.backend = false;
+      setMessage('Mode lokal aktif. Sinkronisasi cloud belum tersedia.');
+    }
+  }
+
+  async function recoverAudioLinks() {
+    await Promise.all(state.sessions.map(async (s) => {
+      if (!s.recordingId) return;
+      try {
+        const a = await recorder.getRecording(s.recordingId);
+        s.audioAvailable = Boolean(a?.blob);
+      } catch {
+        s.audioAvailable = false;
+      }
+    }));
+    localSave();
+  }
+
+  async function persist() {
+    localSave();
+    if (!state.backend) return;
+    try {
+      const d = await api('/api/lite-data.js', {
+        method: 'PUT',
+        headers: { 'X-Notulensi-Lite-Request': '1' },
+        body: JSON.stringify({ baseVersion: state.version, data: { sessions: state.sessions } })
+      });
+      if (d.conflict) {
+        const local = state.sessions;
+        state.sessions = d.data.sessions || [];
+        mergeSessions(local);
+        state.version = d.version;
+        localSave();
+        setMessage('Data berubah di sesi lain; data lokal yang belum ada dipertahankan.');
+      } else {
+        state.version = d.version;
+        localSave();
+      }
+    } catch (e) {
+      setMessage(e.status === 401 ? 'Sesi Admin berakhir; data tetap tersimpan lokal.' : 'Sinkronisasi cloud gagal; data tetap tersimpan lokal.');
+    }
+  }
+
+  function setMessage(x) { $('message').textContent = x; }
+  function setStatus(x, live = false) { $('status').textContent = x; $('dot').classList.toggle('live', live); }
+  function fmt(ms) { return recorder.formatMs(ms); }
+  function renderTimer(e) { $('timer').textContent = e.display || fmt(e.elapsed || 0); state.durationMs = e.elapsed || 0; }
+
+  function renderHistory() {
+    const h = $('history');
+    if (!state.sessions.length) { h.innerHTML = '<div class="empty">Belum ada sesi tersimpan.</div>'; return; }
+    h.innerHTML = state.sessions.map((s) => `<article class="history-item"><div class="history-main"><strong>${esc(s.title)}</strong><span>${esc(new Date(s.createdAt).toLocaleString('id-ID'))}</span></div><div class="muted">${fmt(s.durationMs || 0)} · ${s.audioAvailable ? 'audio lokal tersedia' : 'transkrip saja'}</div><p>${esc(s.text || '').slice(0, 360)}</p><div class="history-actions"><button class="ghost" data-load="${esc(s.id)}">Buka</button>${s.audioAvailable ? `<button class="ghost" data-audio="${esc(s.recordingId)}">Unduh Audio</button>` : ''}</div></article>`).join('');
+  }
+
+  function setControls() {
+    const r = state.recording;
+    $('start').disabled = r || state.finalizing;
+    $('pause').disabled = !r || state.paused || state.finalizing;
+    $('resume').disabled = !r || !state.paused || state.finalizing;
+    $('stop').disabled = !r || state.finalizing;
+    $('save').disabled = state.finalizing || r || !$('text').value.trim();
+  }
+
+  function refreshSupport() {
+    const audio = !!window.MediaRecorder && !!navigator.mediaDevices?.getUserMedia;
+    const speech = transcription.support();
+    $('support').innerHTML = `<span class="support-chip ${audio ? 'ok' : 'bad'}">${audio ? '● Audio siap' : '● Audio tidak tersedia'}</span><span class="support-chip ${speech ? 'ok' : 'warn'}">${speech ? '● Transkrip siap' : '● Transkrip browser terbatas'}</span>`;
+  }
+
+  async function start() {
+    try {
+      transcription.reset($('text').value.trim());
+      await recorder.start();
+      state.recording = true;
+      state.paused = false;
+      state.recordingId = null;
+      setStatus('Sedang merekam', true);
+      setMessage('Mikrofon aktif. Anda dapat berbicara secara normal.');
+      setControls();
+      try { await transcription.start(); }
+      catch { setMessage('Audio aktif; transkripsi browser tidak tersedia. Rekaman tetap berjalan.'); }
+    } catch (e) {
+      setStatus('Siap merekam');
+      setMessage(e.message === 'MICROPHONE_API_UNAVAILABLE' ? 'Browser tidak menyediakan akses mikrofon.' : 'Akses mikrofon gagal. Periksa izin browser lalu coba lagi.');
+    }
+  }
+
+  function pause() {
+    recorder.pause();
+    state.paused = true;
+    transcription.stop();
+    setStatus('Rekaman dijeda');
+    setMessage('Rekaman dijeda.');
+    setControls();
+  }
+
+  async function resume() {
+    recorder.resume();
+    state.paused = false;
+    try { await transcription.start(); } catch { /* audio recording can continue */ }
+    setStatus('Sedang merekam', true);
+    setMessage('Rekaman dilanjutkan.');
+    setControls();
+  }
+
+  async function stop() {
+    if (!state.recording || state.finalizing) return;
+    state.finalizing = true;
+    setControls();
+    try {
+      transcription.stop();
+      const meta = await recorder.stop();
+      state.recording = false;
+      state.paused = false;
+      state.recordingId = meta?.id || null;
+      state.durationMs = meta?.durationMs || state.durationMs;
+      setStatus('Rekaman selesai');
+      setMessage('Rekaman selesai dan audio lokal sudah diamankan. Periksa transkrip lalu simpan.');
+    } catch {
+      state.recording = false;
+      state.paused = false;
+      setStatus('Rekaman selesai');
+      setMessage('Audio gagal difinalisasi; transkrip tetap dapat disimpan.');
+    } finally {
+      state.finalizing = false;
+      setControls();
+    }
+  }
+
+  async function save() {
+    const text = $('text').value.trim();
+    if (!text) { setMessage('Belum ada transkrip untuk disimpan.'); return; }
+    if (state.recording || state.finalizing) { setMessage('Tunggu sampai rekaman selesai.'); return; }
+    const title = $('title').value.trim() || `Sesi ${new Date().toLocaleString('id-ID')}`;
+    let audio = null;
+    if (state.recordingId) try { audio = await recorder.getRecording(state.recordingId); } catch { /* optional audio */ }
+    const session = { id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, title, text, durationMs: state.durationMs, createdAt: new Date().toISOString(), recordingId: audio?.id || state.recordingId || null, audioAvailable: Boolean(audio?.blob) };
+    state.sessions.unshift(session);
+    await persist();
+    renderHistory();
+    setMessage(session.audioAvailable ? 'Sesi dan audio tersimpan.' : 'Sesi tersimpan tanpa audio lokal.');
+  }
+
+  function resetEditor() {
+    if (state.recording || state.finalizing) { setMessage('Hentikan rekaman terlebih dahulu.'); return; }
+    transcription.reset();
+    $('title').value = '';
+    $('text').value = '';
+    state.durationMs = 0;
+    state.recordingId = null;
+    renderTimer({ elapsed: 0, display: '00:00:00' });
+    setMessage('Sesi baru siap.');
+    setControls();
+  }
+
+  function copy() {
+    if (!navigator.clipboard?.writeText) { setMessage('Clipboard tidak tersedia.'); return; }
+    navigator.clipboard.writeText($('text').value).then(() => setMessage('Transkrip disalin.')).catch(() => setMessage('Clipboard tidak tersedia.'));
+  }
+
+  function download() {
+    const u = URL.createObjectURL(new Blob([$('text').value], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = u; a.download = `notulensi-lite-${Date.now()}.txt`; a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+  }
+
+  window.addEventListener('notulensi:lite:timer', (e) => renderTimer(e.detail));
+  window.addEventListener('notulensi:lite:stopped', (e) => { state.recordingId = e.detail.id; state.durationMs = e.detail.durationMs || state.durationMs; setControls(); });
+  window.addEventListener('notulensi:lite:transcription:result', (e) => { $('text').value = e.detail.combined || ''; setControls(); });
+  window.addEventListener('notulensi:lite:transcription:error', (e) => { if (state.recording) setMessage(`Transkripsi: ${e.detail.code || 'error'}. Rekaman audio tetap berjalan.`); });
+
+  $('start').onclick = start;
+  $('pause').onclick = pause;
+  $('resume').onclick = resume;
+  $('stop').onclick = stop;
+  $('save').onclick = save;
+  $('copy').onclick = copy;
+  $('download').onclick = download;
+  $('clear').onclick = resetEditor;
+  $('text').oninput = setControls;
+  $('history').onclick = async (e) => {
+    const b = e.target.closest('[data-load],[data-audio]');
+    if (!b) return;
+    if (b.dataset.load) {
+      const s = state.sessions.find((x) => x.id === b.dataset.load);
+      if (s) {
+        $('title').value = s.title;
+        $('text').value = s.text || '';
+        state.durationMs = s.durationMs || 0;
+        state.recordingId = s.recordingId || null;
+        renderTimer({ elapsed: state.durationMs, display: fmt(state.durationMs) });
+        setMessage('Sesi dibuka untuk ditinjau.');
+        setControls();
+      }
+    } else if (b.dataset.audio) {
+      try { recorder.download(await recorder.getRecording(b.dataset.audio)); }
+      catch { setMessage('Audio lokal tidak ditemukan.'); }
+    }
+  };
+
+  localLoad();
+  refreshSupport();
+  renderTimer({ elapsed: 0, display: '00:00:00' });
+  setControls();
+  renderHistory();
+  hydrate();
 })();
