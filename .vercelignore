@@ -1,10 +1,8 @@
-# Keep deployment payload focused; runtime-only tooling and local artifacts are not deployed.
+# Keep deployment payload focused; local/build-only material must not be uploaded.
 node_modules/
 .git/
 .github/
 phase17-execution/
-server/*.mjs
-server/*.js
 **/*.log
 *.zip
 *.tar
