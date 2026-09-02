@@ -1,0 +1,10 @@
+# Keep deployment payload focused; runtime-only tooling and local artifacts are not deployed.
+node_modules/
+.git/
+.github/
+phase17-execution/
+server/*.mjs
+server/*.js
+**/*.log
+*.zip
+*.tar
