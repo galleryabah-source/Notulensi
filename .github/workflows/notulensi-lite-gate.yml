@@ -16,6 +16,8 @@ on:
       - 'server/lite-backend.js'
       - 'tests/notulensi-lite-solid-gate.mjs'
       - '.github/workflows/notulensi-lite-gate.yml'
+      - 'vercel.json'
+      - '.vercelignore'
 
 permissions:
   contents: read
