@@ -47,11 +47,18 @@ async function loadApi(name) {
 const apiWindow = new Map();
 const API_LIMIT = Number(process.env.NOTULENSI_API_RATE_LIMIT || 180);
 const API_WINDOW_MS = 60_000;
+const API_BUCKET_MAX = 10_000;
 function allowApiRequest(req) {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const bucket = apiWindow.get(ip);
   if (!bucket || now - bucket.start >= API_WINDOW_MS) {
+    if (apiWindow.size >= API_BUCKET_MAX) {
+      for (const [key, value] of apiWindow) {
+        if (now - value.start >= API_WINDOW_MS) apiWindow.delete(key);
+        if (apiWindow.size < API_BUCKET_MAX) break;
+      }
+    }
     apiWindow.set(ip, { start: now, count: 1 });
     return true;
   }
@@ -96,9 +103,21 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+// Never expose server source, tests, scripts, package metadata, or dependency trees as static files.
+const blockedStaticPrefixes = [
+  '/server/', '/tests/', '/scripts/', '/api/', '/node_modules/', '/.git/', '/.github/', '/phase17-execution/',
+  '/package.json', '/package-lock.json', '/pnpm-lock.yaml', '/yarn.lock', '/bun.lockb', '/.env', '/Caddyfile', '/SELF_HOST_WINDOWS.md'
+];
+app.use((req, res, next) => {
+  const pathname = req.path || '/';
+  if (blockedStaticPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) return res.status(404).type('text/plain').send('Not Found');
+  next();
+});
+
 app.use(express.static(root, {
   index: 'index.html',
   fallthrough: true,
+  dotfiles: 'ignore',
   setHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
   }
