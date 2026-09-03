@@ -10,6 +10,7 @@ on:
     paths:
       - 'server/self-host.mjs'
       - 'tests/self-host-smoke.mjs'
+      - 'tests/self-host-api-load.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/self-host-smoke.yml'
@@ -32,5 +33,7 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: node --check server/self-host.mjs
+      - name: Load all API handlers
+        run: node tests/self-host-api-load.mjs
       - name: Runtime smoke test
         run: node tests/self-host-smoke.mjs
