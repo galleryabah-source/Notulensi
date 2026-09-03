@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -81,20 +80,20 @@ app.use('/api', async (req, res, next) => {
 });
 
 app.get('/health', async (_req, res) => {
-  let database = 'not_configured';
-  if (process.env.DATABASE_URL) {
-    try {
-      const { Pool } = await import('pg');
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 3000, idleTimeoutMillis: 3000 });
-      await pool.query('SELECT 1');
-      await pool.end();
-      database = 'ok';
-    } catch {
-      database = 'error';
-    }
+  if (!process.env.DATABASE_URL) {
+    const allowNoDb = process.env.NOTULENSI_ALLOW_NO_DB === '1';
+    return res.status(allowNoDb ? 200 : 503).json({ ok: allowNoDb, service: 'notulensi', runtime: 'self-hosted', database: 'not_configured' });
   }
-  const ok = database !== 'error';
-  return res.status(ok ? 200 : 503).json({ ok, service: 'notulensi', runtime: 'self-hosted', database });
+
+  try {
+    const { Pool } = await import('pg');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 3000, idleTimeoutMillis: 3000 });
+    await pool.query('SELECT 1');
+    await pool.end();
+    return res.status(200).json({ ok: true, service: 'notulensi', runtime: 'self-hosted', database: 'ok' });
+  } catch {
+    return res.status(503).json({ ok: false, service: 'notulensi', runtime: 'self-hosted', database: 'error' });
+  }
 });
 
 app.use(express.static(root, {
