@@ -12,7 +12,6 @@ on:
       - 'tests/self-host-smoke.mjs'
       - 'tests/self-host-api-load.mjs'
       - 'package.json'
-      - 'package-lock.json'
       - '.github/workflows/self-host-smoke.yml'
 
 permissions:
@@ -30,7 +29,7 @@ jobs:
         with:
           node-version: 24
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Syntax check
         run: node --check server/self-host.mjs
       - name: Load all API handlers
