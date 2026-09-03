@@ -1,5 +1,5 @@
 import { db, ensureTable } from './ai-config.js';
-import { resolveProvider, generate, extractText, smokeTest } from './_ai-provider.js';
+import { resolveProvider, generate, extractText, smokeTest } from '../server/ai-provider.js';
 const AUDIO_MAX_BYTES=2500000,CHUNK_MAX_BYTES=900000,TIMEOUT_MS=45000;
 const cleanAudio=v=>String(v||'').replace(/^data:[^;]+;base64,/,'').replace(/\s+/g,'');
 const audioMime=v=>{const m=String(v||'audio/webm').toLowerCase();return /^audio\/(webm|ogg|mpeg|wav|mp4|mp3|x-m4a)$/.test(m)?m:'audio/webm'};
