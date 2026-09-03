@@ -3,7 +3,7 @@ import http from 'node:http';
 
 const port = 3197;
 const child = spawn(process.execPath, ['server/self-host.mjs'], {
-  env: { ...process.env, NOTULENSI_HOST: '127.0.0.1', NOTULENSI_PORT: String(port), DATABASE_URL: '' },
+  env: { ...process.env, NOTULENSI_HOST: '127.0.0.1', NOTULENSI_PORT: String(port), DATABASE_URL: '', NOTULENSI_ALLOW_NO_DB: '1' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 
