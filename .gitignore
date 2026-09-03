@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+node_modules/
+*.log
+logs/
+backups/
+.vscode/
+.DS_Store
+Thumbs.db
