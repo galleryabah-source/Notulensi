@@ -1,0 +1,8 @@
+# Keep deployment payload focused; local/build-only material must not be uploaded.
+node_modules/
+.git/
+.github/
+phase17-execution/
+**/*.log
+*.zip
+*.tar

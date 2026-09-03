@@ -1,5 +1,5 @@
 import { db, ensureTable } from './ai-config.js';
-import { resolveProvider, generate, extractText } from './_ai-provider.js';
+import { resolveProvider, generate, extractText } from '../server/ai-provider.js';
 
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
