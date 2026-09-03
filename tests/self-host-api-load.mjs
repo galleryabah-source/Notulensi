@@ -4,7 +4,10 @@ import { pathToFileURL } from 'node:url';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const apiDir = path.join(root, 'api');
-const files = fs.readdirSync(apiDir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith('.js')).map((entry) => entry.name).sort();
+const files = fs.readdirSync(apiDir, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.js') && !entry.name.startsWith('_'))
+  .map((entry) => entry.name)
+  .sort();
 
 for (const file of files) {
   const module = await import(pathToFileURL(path.join(apiDir, file)).href);
