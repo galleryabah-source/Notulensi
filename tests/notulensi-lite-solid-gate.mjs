@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
 const root = new URL('../', import.meta.url);
 const read = (name) => fs.readFileSync(new URL(name, root), 'utf8');
@@ -14,6 +13,8 @@ const storage = read('notulensi-lite-storage.js');
 const liteApi = read('api/lite-data.js');
 const liteBackend = read('server/lite-backend.js');
 const adminLogin = read('api/admin-login.js');
+const vercelConfig = read('vercel.json');
+const vercelIgnore = read('.vercelignore');
 
 const checks = [
   ['Vercel API function count <= 12', apiFiles.length <= 12],
@@ -31,7 +32,10 @@ const checks = [
   ['Parameterized SQL retained', liteBackend.includes('WHERE key=$1') && liteBackend.includes('[key]')],
   ['Row lock retained', liteBackend.includes('FOR UPDATE')],
   ['No schema DDL in Lite backend', !/CREATE TABLE|ALTER TABLE|DROP TABLE/i.test(liteApi + liteBackend)],
-  ['Local storage adapter is namespaced', storage.includes('notulensi:lite:v2')]
+  ['Local storage adapter is namespaced', storage.includes('notulensi:lite:v2')],
+  ['Vercel uses Node 24 for API functions', /"api\/\*\.js"\s*:\s*\{\s*"runtime"\s*:\s*"nodejs24\.x"/s.test(vercelConfig)],
+  ['Vercel config contains no Wrangler deployment', !/wrangler|cloudflare/i.test(vercelConfig)],
+  ['Vercel ignore preserves server runtime', !/server\/(\*|\*\.js)|server\//i.test(vercelIgnore)]
 ];
 
 for (const [name, ok] of checks) console.log(`${ok ? 'PASS' : 'FAIL'} — ${name}`);
