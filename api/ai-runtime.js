@@ -10,6 +10,7 @@ async function transcribeAudio(provider,body,chunkMode){const audio=cleanAudio(b
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
   if(!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
+  const session=requireAdmin(req,res);if(!session)return;
   let client;
   try{
     client=await db().connect(); await ensureTable(client);
@@ -20,7 +21,6 @@ export default async function handler(req,res){
       const smoke=await smokeTest(provider);
       return res.status(200).json({healthy:smoke.healthy,configured:true,provider:provider.id,model:smoke.model||provider.model,status:smoke.status||0,reason:smoke.healthy?null:smoke.error||'AI generation test failed.'});
     }
-    const session=requireAdmin(req,res);if(!session)return;
     const sourceAudio=req.query?.mode==='source-transcribe'||req.body?.sourceAudio===true||req.body?.chunkMode===true;
     if(sourceAudio){const result=await transcribeAudio(provider,req.body,req.query?.mode==='source-transcribe'&&req.body?.chunkMode===true);return res.status(result.status).json(result.body)}
     if(!provider.configured)return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:provider.id,model:provider.model});
