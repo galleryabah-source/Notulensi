@@ -1,9 +1,11 @@
 import { db, ensureTable } from './ai-config.js';
 import { resolveProvider, generate, extractText } from '../server/ai-provider.js';
+import { requireAdmin } from '../server/admin-auth.js';
 
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='POST') return res.status(405).json({error:'Method not allowed'});
+  const session=requireAdmin(req,res);if(!session)return;
   let client;
   try{
     client=await db().connect(); await ensureTable(client);
