@@ -1,5 +1,6 @@
 import { db, ensureTable } from './ai-config.js';
 import { resolveProvider, generate, extractText, smokeTest } from '../server/ai-provider.js';
+import { requireAdmin } from '../server/admin-auth.js';
 const AUDIO_MAX_BYTES=2500000,CHUNK_MAX_BYTES=900000,TIMEOUT_MS=45000;
 const cleanAudio=v=>String(v||'').replace(/^data:[^;]+;base64,/,'').replace(/\s+/g,'');
 const audioMime=v=>{const m=String(v||'audio/webm').toLowerCase();return /^audio\/(webm|ogg|mpeg|wav|mp4|mp3|x-m4a)$/.test(m)?m:'audio/webm'};
@@ -19,6 +20,7 @@ export default async function handler(req,res){
       const smoke=await smokeTest(provider);
       return res.status(200).json({healthy:smoke.healthy,configured:true,provider:provider.id,model:smoke.model||provider.model,status:smoke.status||0,reason:smoke.healthy?null:smoke.error||'AI generation test failed.'});
     }
+    const session=requireAdmin(req,res);if(!session)return;
     const sourceAudio=req.query?.mode==='source-transcribe'||req.body?.sourceAudio===true||req.body?.chunkMode===true;
     if(sourceAudio){const result=await transcribeAudio(provider,req.body,req.query?.mode==='source-transcribe'&&req.body?.chunkMode===true);return res.status(result.status).json(result.body)}
     if(!provider.configured)return res.status(503).json({error:'AI provider is not configured.',configured:false,provider:provider.id,model:provider.model});
